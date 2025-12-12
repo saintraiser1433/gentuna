@@ -1,0 +1,86 @@
+// Prisma schema for Random Name Lucky Draw System
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Entry model - represents a person entered into the draw
+model Entry {
+  id        String   @id @default(cuid())
+  name      String // Required: name of the entrant
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  winners Winner[] // Entries that have won in draws
+
+  @@index([name])
+  @@index([createdAt])
+}
+
+// Draw model - represents a single draw event
+model Draw {
+  id         String   @id @default(cuid())
+  numWinners Int // Number of winners to pick
+  seed       String? // Optional random seed for reproducibility
+  createdAt  DateTime @default(now())
+
+  // Relations
+  winners Winner[] // Winners from this draw
+
+  @@index([createdAt])
+}
+
+// Prize model - represents prizes available in draws
+model Prize {
+  id          String   @id @default(cuid())
+  name        String // Name of the prize
+  description String? // Optional description
+  value       Float? // Optional monetary value
+  position    Int? // Position/rank this prize is for (1st, 2nd, 3rd, etc.)
+  imageUrl    String? // Optional image URL
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  winners Winner[] // Winners who received this prize
+
+  @@index([position])
+  @@index([createdAt])
+}
+
+// Winner model - links an Entry to a Draw
+model Winner {
+  id        String   @id @default(cuid())
+  drawId    String // Reference to the Draw
+  entryId   String // Reference to the Entry
+  position  Int // Position/rank in the draw (1st, 2nd, 3rd, etc.)
+  prizeId   String? // Optional reference to the Prize
+  status    String  @default("present") // Status: "present" or "not_present"
+  createdAt DateTime @default(now())
+
+  // Relations
+  draw  Draw   @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  entry Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  prize Prize? @relation(fields: [prizeId], references: [id], onDelete: SetNull)
+
+  @@unique([drawId, entryId]) // An entry can only win once per draw
+  @@index([drawId])
+  @@index([entryId])
+  @@index([prizeId])
+  @@index([status])
+}
+
+// DrawSettings model - stores prize assignments for draws
+model DrawSettings {
+  id        String   @id @default(cuid())
+  prizeAssignments Json // Array of { prizeId: string, count: number }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
+}
