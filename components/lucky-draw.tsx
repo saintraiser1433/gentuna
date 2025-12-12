@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
+import type { JSX } from "react"
 import Image from "next/image"
 import * as XLSX from "xlsx"
 // Removed framer-motion import - using direct CSS transforms for smoother animation
@@ -13,6 +14,7 @@ import {
   ChevronDown, ChevronUp, Upload, List, Search, ChevronLeft, ChevronRight, Inbox, Gift, Edit2, ChevronsLeft, ChevronsRight, ArrowDown, Plus, Minus, X, Disc3
 } from "lucide-react"
 import Confetti from "react-confetti"
+// @ts-ignore - canvas-confetti doesn't have type definitions
 import confetti from "canvas-confetti"
 import { SettingsPanel } from "@/components/settings"
 import { SiteHeader } from "@/components/site-header"
@@ -33,6 +35,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/components/ui/toast"
+import { useSound } from "@/hooks/use-sound"
 
 interface Entry {
   id: string
@@ -351,6 +354,7 @@ function PrizesTable({
 }
 
 export function LuckyDraw() {
+  const { startSpinningSound, stopSpinningSound, updateSpinSpeed, checkEntryPassed, playModalMusic, stopModalMusic } = useSound()
   const [currentView, setCurrentView] = useState<View>("main")
   const [entries, setEntries] = useState<Entry[]>([])
   const [draws, setDraws] = useState<Draw[]>([])
@@ -416,8 +420,9 @@ export function LuckyDraw() {
   const [draggedPrizeIndex, setDraggedPrizeIndex] = useState<number | null>(null)
   const [tempPrizeOrder, setTempPrizeOrder] = useState<string[]>([])
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [rouletteSpeed, setRouletteSpeed] = useState(100) // pixels per second
   const [revealDelay, setRevealDelay] = useState(3) // seconds
+  const [spinTime, setSpinTime] = useState(5) // seconds - animation duration
+  const rouletteSpeed = 100 // Fixed speed for idle animation (not configurable)
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
   const [pendingEntryCount, setPendingEntryCount] = useState(0)
   const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null)
@@ -436,14 +441,44 @@ export function LuckyDraw() {
         document.body.style.fontFamily = settings.fontFamily
       }
       // Update animation settings when settings change
-      if (settings.rouletteSpeed !== undefined) {
-        setRouletteSpeed(settings.rouletteSpeed)
-      }
       if (settings.revealDelay !== undefined) {
         setRevealDelay(settings.revealDelay)
       }
+      if (settings.spinTime !== undefined) {
+        setSpinTime(settings.spinTime)
+      }
     }
   }, [settings])
+
+  // Listen for settings updates from settings panel
+  useEffect(() => {
+    const handleSettingsUpdate = () => {
+      const saved = localStorage.getItem("drawSettings")
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          setSettings(parsed)
+          // Update animation settings immediately
+          if (parsed.revealDelay !== undefined) {
+            setRevealDelay(parsed.revealDelay)
+          }
+          if (parsed.spinTime !== undefined) {
+            setSpinTime(parsed.spinTime)
+          }
+        } catch (e) {
+          console.error("Error loading updated settings:", e)
+        }
+      }
+    }
+    
+    window.addEventListener("settingsUpdated", handleSettingsUpdate)
+    window.addEventListener("storage", handleSettingsUpdate)
+    
+    return () => {
+      window.removeEventListener("settingsUpdated", handleSettingsUpdate)
+      window.removeEventListener("storage", handleSettingsUpdate)
+    }
+  }, [])
 
   // Fetch entries
   const fetchEntries = async () => {
@@ -724,11 +759,11 @@ export function LuckyDraw() {
         const parsed = JSON.parse(saved)
         setSettings(parsed)
         // Load animation settings from saved settings
-        if (parsed.rouletteSpeed !== undefined) {
-          setRouletteSpeed(parsed.rouletteSpeed)
-        }
         if (parsed.revealDelay !== undefined) {
           setRevealDelay(parsed.revealDelay)
+        }
+        if (parsed.spinTime !== undefined) {
+          setSpinTime(parsed.spinTime)
         }
       } catch (e) {
         console.error("Error loading settings:", e)
@@ -889,6 +924,17 @@ export function LuckyDraw() {
           }
           
           setAnimationOffset(offsetRef.current)
+          
+          // Check if entry passed and play toot sound
+          if (isSpinningRef.current) {
+            checkEntryPassed(offsetRef.current)
+          }
+          
+          // Update spinning sound speed to sync with continuous animation
+          // Only if not in controlled draw animation (isSpinning state handles that)
+          if (!isSpinningRef.current && Math.abs(velocityRef.current) > 10) {
+            updateSpinSpeed(Math.abs(velocityRef.current))
+          }
         }
         
         animationRef.current = requestAnimationFrame(animate)
@@ -1552,22 +1598,28 @@ export function LuckyDraw() {
         targetPosition = winnerIndex * totalItemHeight
       } else if (rouletteType === "wheel") {
         const anglePerSegment = 360 / entries.length
-        // Wheel segments start at -90 degrees (top)
-        // Each segment i starts at: (i * anglePerSegment) - 90
-        // Center of segment i is at: (i * anglePerSegment) - 90 + (anglePerSegment / 2)
-        // To point arrow (at 0°) at segment center, rotate wheel by: 90 - (center angle)
-        // Segment center angle in wheel's coordinate system
+        // Wheel segments are drawn starting from -90° (top)
+        // Segment i starts at: (i * anglePerSegment) - 90
+        // Segment i center is at: (i * anglePerSegment) - 90 + (anglePerSegment / 2)
+        // The arrow indicator is at 0° (right side, pointing left)
+        // When wheel rotates by R degrees clockwise, segment i center moves to:
+        //   (i * anglePerSegment) - 90 + (anglePerSegment / 2) + R
+        // We want winner segment's center to be at 0° (arrow position):
+        //   (winnerIndex * anglePerSegment) - 90 + (anglePerSegment / 2) + R = 0
+        // Solving for R: R = 90 - (winnerIndex * anglePerSegment) - (anglePerSegment / 2)
+        // R = 90 - (winnerIndex + 0.5) * anglePerSegment
+        // Calculate the exact center angle of the winner segment
+        // Segment center in wheel's local coordinates: (winnerIndex * anglePerSegment) - 90 + (anglePerSegment / 2)
         const segmentCenterAngle = (winnerIndex * anglePerSegment) - 90 + (anglePerSegment / 2)
-        // To align segment center with arrow at 0°:
-        // After rotation X, segment center is at: segmentCenterAngle + X
-        // We want: segmentCenterAngle + X = 0
-        // Therefore: X = -segmentCenterAngle
-        // But we need positive rotation, so: X = 360 - segmentCenterAngle (if negative)
-        // Simplified: X = 90 - (winnerIndex + 0.5) * anglePerSegment
-        targetPosition = 90 - (winnerIndex + 0.5) * anglePerSegment
-        // Normalize to 0-360 range
-        while (targetPosition < 0) targetPosition += 360
-        while (targetPosition >= 360) targetPosition -= 360
+        // Rotate wheel so segment center aligns with arrow at 0°
+        // After rotation R, segment center is at: segmentCenterAngle + R
+        // We want: segmentCenterAngle + R = 0, so R = -segmentCenterAngle
+        targetPosition = -segmentCenterAngle
+        // Normalize to 0-360 range with high precision
+        targetPosition = ((targetPosition % 360) + 360) % 360
+        // Round to high precision to avoid floating point errors that might cause landing on separator lines
+        // Using 4 decimal places ensures we're well within the segment center, not on the separator
+        targetPosition = Math.round(targetPosition * 10000) / 10000
       }
       
       // Get current normalized position
@@ -1576,25 +1628,54 @@ export function LuckyDraw() {
       // Calculate shortest distance to target
       let distanceToTarget = targetPosition - currentNormalizedPos
       
-      // Add extra spins (3-5 full loops)
-      const extraSpins = 3 + Math.floor(Math.random() * 3)
+      // Add extra spins - more spins for fewer entries to ensure fast spinning feel
+      // With fewer entries, we need more spins to maintain the fast spinning perception
+      const baseSpins = 3 + Math.floor(Math.random() * 3) // 3-5 base spins
+      const entryCountMultiplier = entries.length < 20 ? Math.max(2, 20 / entries.length) : 1 // More spins for fewer entries
+      const extraSpins = Math.floor(baseSpins * entryCountMultiplier)
       const extraDistance = extraSpins * loopSize
-      
-      // Calculate final absolute target
-      const finalTarget = offsetRef.current + extraDistance + distanceToTarget
       
       // Unlock position for new draw
       isLockedPositionRef.current = false
       lockedPositionRef.current = null
       
+      // Use spinTime setting for animation duration (convert seconds to milliseconds)
+      // This controls how long the roulette spins before stopping
+      const totalDuration = spinTime * 1000
+      
+      // Get starting position
+      const startTime = performance.now()
+      const startOffset = offsetRef.current
+      
+      // Start at MAXIMUM FULL SPEED - super fast spinning from the very beginning
+      // Use a fixed very high speed that doesn't depend on spin time or entry count
+      // This ensures it always starts fast regardless of spin time setting or number of entries
+      const initialSpinSpeed = 15000 // Fixed maximum speed - always fast at start
+      
+      // Calculate final absolute target
+      let finalTarget = offsetRef.current + extraDistance + distanceToTarget
+      
+      // Ensure minimum distance for fast spinning feel (especially important for few entries)
+      // Calculate minimum distance needed for the spin time at initial speed
+      // This ensures the animation always feels fast, even with few entries
+      const minDistanceForSpinTime = (initialSpinSpeed * 0.75) * (totalDuration / 1000) // Average speed * time
+      const actualDistance = Math.abs(finalTarget - startOffset)
+      
+      // If actual distance is less than minimum, add more distance
+      if (actualDistance < minDistanceForSpinTime) {
+        const additionalSpins = Math.ceil((minDistanceForSpinTime - actualDistance) / loopSize)
+        finalTarget = offsetRef.current + (extraSpins + additionalSpins) * loopSize + distanceToTarget
+      }
+      
       // START SPINNING - animation continues automatically
       setIsSpinning(true)
       disableWrappingRef.current = true // Prevent wrapping during controlled animation
-      setCurrentAnimationSpeed(600) // Very fast spin
       
-      const totalDuration = 3500 // 3.5 seconds total
-      const startTime = performance.now()
-      const startOffset = offsetRef.current
+      // Set initial speed immediately so it starts at full speed
+      setCurrentAnimationSpeed(initialSpinSpeed)
+      
+      // Start spinning sound effect with entries info
+      startSpinningSound(initialSpinSpeed, entries.length, rouletteType)
       
       // Smooth animation to target using easing
       const animateToTarget = () => {
@@ -1602,22 +1683,79 @@ export function LuckyDraw() {
         const progress = Math.min(elapsed / totalDuration, 1)
         
         if (progress < 1) {
-          // Ease out cubic for natural deceleration
+          // Ease out cubic for natural deceleration - starts fast, slows down smoothly
           const easeProgress = 1 - Math.pow(1 - progress, 3)
           const currentPosition = startOffset + ((finalTarget - startOffset) * easeProgress)
           
           offsetRef.current = currentPosition
           setAnimationOffset(currentPosition)
           
-          // Update speed for visual feedback
-          const currentSpeed = 600 * (1 - easeProgress)
-          setCurrentAnimationSpeed(Math.max(currentSpeed, 20))
+          // Decelerate speed based on spin time progress
+          // Keep full speed for most of the spin time (first 80-85%), then decelerate near the end
+          // This ensures it stays fast even with longer spin times
+          let speedMultiplier: number
+          if (progress < 0.85) {
+            // Maintain full speed for first 85% of spin time
+            // Slight decrease to make it feel natural, but stays very fast
+            speedMultiplier = 1.0 - (progress / 0.85) * 0.1 // Only 10% decrease over first 85%
+          } else {
+            // Decelerate dramatically in last 15% of spin time
+            const remainingProgress = (progress - 0.85) / 0.15 // 0-1 for last 15%
+            speedMultiplier = 0.9 * Math.pow(1 - remainingProgress, 3) // Cubic deceleration in last 15%
+          }
+          
+          const currentSpeed = initialSpinSpeed * speedMultiplier
+          
+          // Allow speed to get very slow near the end (last 5% of spin time)
+          // This ensures smooth stopping at the spin time limit
+          const minSpeed = progress > 0.95 ? 5 : 10 // Very slow when very close to spin time limit
+          const finalSpeed = Math.max(minSpeed, currentSpeed)
+          
+          setCurrentAnimationSpeed(finalSpeed)
+          
+          // Update spinning sound speed to sync with animation
+          updateSpinSpeed(finalSpeed)
+          
+          // Check if entry passed center/indicator and play tick sound
+          checkEntryPassed(offsetRef.current)
           
           requestAnimationFrame(animateToTarget)
         } else {
           // Animation complete - lock position to prevent flickering
           const loopSize = rouletteType === "vertical" ? entries.length * 80 : 360
-          const normalizedPosition = targetPosition % loopSize
+          let normalizedPosition = targetPosition % loopSize
+          if (normalizedPosition < 0) normalizedPosition += loopSize
+          
+          // For wheel, verify the winner is correct and ensure we're in the center of segment, not on separator
+          if (rouletteType === "wheel" && entries.length > 0) {
+            const anglePerSegment = 360 / entries.length
+            // Calculate the exact center angle of the winner segment
+            const correctSegmentCenter = (winnerIndex * anglePerSegment) - 90 + (anglePerSegment / 2)
+            // Calculate the exact rotation needed to align segment center with arrow at 0°
+            let exactRotation = -correctSegmentCenter
+            // Normalize to 0-360 with high precision
+            exactRotation = ((exactRotation % 360) + 360) % 360
+            // Round to avoid floating point errors that might cause landing on separator line
+            exactRotation = Math.round(exactRotation * 10000) / 10000
+            
+            // Verify we're close to the correct position (within 0.01 degrees to avoid separator)
+            const positionDiff = Math.abs(normalizedPosition - exactRotation)
+            const wrappedDiff = Math.min(positionDiff, 360 - positionDiff)
+            
+            if (wrappedDiff > 0.01) {
+              // Use the exact calculated position to ensure we're in the center of the segment, not on separator
+              normalizedPosition = exactRotation
+            }
+            
+            // Double-check: verify which segment is actually at the arrow
+            const calculatedIndex = Math.floor((90 - (anglePerSegment / 2) - normalizedPosition + 360) / anglePerSegment) % entries.length
+            const actualIndex = calculatedIndex < 0 ? calculatedIndex + entries.length : calculatedIndex
+            
+            if (actualIndex !== winnerIndex) {
+              // Recalculate with exact precision to ensure correct winner and avoid separator
+              normalizedPosition = exactRotation
+            }
+          }
           
           // Lock the position
           isLockedPositionRef.current = true
@@ -1631,6 +1769,8 @@ export function LuckyDraw() {
           setTimeout(() => {
             setIsSpinning(false)
             setCurrentAnimationSpeed(100)
+            // Stop spinning sound
+            stopSpinningSound()
             // Keep position locked until next draw starts
           }, 100)
         }
@@ -1638,8 +1778,20 @@ export function LuckyDraw() {
       
       requestAnimationFrame(animateToTarget)
       
-      // Wait for animation to complete
-      await new Promise(resolve => setTimeout(resolve, totalDuration + 200))
+      // Wait for animation to complete (use exact spinTime duration)
+      // Add small buffer (50ms) to ensure animation completes
+      await new Promise(resolve => setTimeout(resolve, totalDuration + 50))
+      
+      // After animation completes, calculate remaining reveal delay
+      // Reveal delay is the total time from draw start to winner reveal
+      // If revealDelay > spinTime, wait the difference
+      const totalRevealTime = revealDelay * 1000 // Total time from start
+      const animationTime = totalDuration + 50 // Time for animation + buffer
+      const remainingDelay = Math.max(0, totalRevealTime - animationTime)
+      
+      if (remainingDelay > 0) {
+        await new Promise(resolve => setTimeout(resolve, remainingDelay))
+      }
       
       // Remove winner from entries list
       setEntries(prevEntries => prevEntries.filter(e => e.id !== winner.entry.id))
@@ -1654,6 +1806,9 @@ export function LuckyDraw() {
       setWinnerData({ winners: [winner], draw: newDraw })
       setShowWinnerModal(true)
       setShowConfetti(true)
+      
+      // Play modal music
+      playModalMusic()
       
       // Trigger confetti effect
       const duration = 3000
@@ -1717,7 +1872,7 @@ export function LuckyDraw() {
   // Draw again with same settings
   const handleDrawAgain = async () => {
     if (!lastDraw) return
-    setNumWinners(lastDraw.numWinners.toString())
+    // Note: numWinners is handled automatically by the draw system
     await handleRunDraw()
   }
 
@@ -1957,12 +2112,8 @@ export function LuckyDraw() {
                           <p className="text-sm mt-2">Your lucky winners will appear here!</p>
                         </div>
                       ) : (
-                        <div className="relative w-full max-w-2xl h-full overflow-hidden rounded-3xl border-4 border-blue-500 shadow-2xl bg-gradient-to-b from-blue-50 to-white">
-                          {/* Top Gradient Fade */}
-                          <div className="absolute top-0 left-0 right-0 h-48 bg-gradient-to-b from-blue-50 via-blue-50/80 to-transparent z-40 pointer-events-none" />
-                          
-                          {/* Bottom Gradient Fade */}
-                          <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-white via-white/80 to-transparent z-40 pointer-events-none" />
+                        <div className="relative w-full max-w-2xl h-full overflow-hidden rounded-3xl border-4 border-gray-500 shadow-2xl bg-gradient-to-b from-blue-50 to-white">
+                          {/* Gradient fade effects removed */}
                           
                           {/* Winner Highlight Box - Center */}
                           <div className="absolute top-1/2 left-4 right-4 transform -translate-y-1/2 z-30 pointer-events-none">
@@ -2029,13 +2180,6 @@ export function LuckyDraw() {
                           
                           {/* Center Circle */}
                           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-yellow-400 via-orange-400 to-orange-500 shadow-2xl border-4 border-white z-40 flex items-center justify-center overflow-hidden">
-                            <Image 
-                              src="/logo.png" 
-                              alt="Logo" 
-                              width={80} 
-                              height={80} 
-                              className="object-contain"
-                            />
                           </div>
                         </div>
                       )}
@@ -2142,6 +2286,30 @@ export function LuckyDraw() {
                   {settings.marqueeText} • {settings.marqueeText} • {settings.marqueeText} • {settings.marqueeText} • {settings.marqueeText} • 
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Logos - Displayed below marquee, only in main view */}
+        {currentView === "main" && settings?.logos && settings.logos.length > 0 && (
+          <div className="w-full px-4 py-4">
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              {settings.logos.filter((logo: string) => logo.trim()).map((logo: string, index: number) => (
+                <div key={index} className="flex items-center justify-center">
+                  <Image
+                    src={logo}
+                    alt={`Logo ${index + 1}`}
+                    width={64}
+                    height={64}
+                    className="object-contain"
+                    style={{ maxWidth: '64px', maxHeight: '64px', width: 'auto', height: 'auto' }}
+                    onError={(e) => {
+                      // Hide broken images
+                      (e.target as HTMLImageElement).style.display = 'none'
+                    }}
+                  />
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -3320,6 +3488,7 @@ export function LuckyDraw() {
                         })
                         if (res.ok) {
                           // Mark as not present but don't decrease count
+                          stopModalMusic()
                           setShowWinnerModal(false)
                           setWinnerData(null)
                           await fetchDraws()
@@ -3398,6 +3567,7 @@ export function LuckyDraw() {
                             // Fallback: just decrease remainingWinners
                             setRemainingWinners(prev => Math.max(0, prev - 1))
                           }
+                          stopModalMusic()
                           setShowWinnerModal(false)
                           setWinnerData(null)
                           await fetchDraws()

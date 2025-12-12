@@ -15,55 +15,41 @@ async function main() {
     prisma.entry.create({
       data: {
         name: 'Alice Johnson',
-        email: 'alice@example.com',
-        weight: 1.0,
       },
     }),
     prisma.entry.create({
       data: {
         name: 'Bob Smith',
-        email: 'bob@example.com',
-        weight: 1.5,
       },
     }),
     prisma.entry.create({
       data: {
         name: 'Charlie Brown',
-        email: 'charlie@example.com',
-        weight: 1.0,
       },
     }),
     prisma.entry.create({
       data: {
         name: 'Diana Prince',
-        email: 'diana@example.com',
-        weight: 2.0,
       },
     }),
     prisma.entry.create({
       data: {
         name: 'Eve Wilson',
-        email: 'eve@example.com',
-        weight: 1.0,
       },
     }),
     prisma.entry.create({
       data: {
         name: 'Frank Miller',
-        weight: 1.0,
       },
     }),
     prisma.entry.create({
       data: {
         name: 'Grace Lee',
-        email: 'grace@example.com',
-        weight: 1.5,
       },
     }),
     prisma.entry.create({
       data: {
         name: 'Henry Davis',
-        weight: 1.0,
       },
     }),
   ])
