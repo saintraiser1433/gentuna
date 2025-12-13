@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Sparkles, Trophy, Settings, Sun, Moon, Users, Gift, FileText } from "lucide-react"
+import { Sparkles, Trophy, Settings, Sun, Moon, Users, Gift, FileText, Maximize, Minimize } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 type View = "main" | "entries" | "prizes" | "settings" | "results"
@@ -17,6 +17,7 @@ export function SiteHeader({ currentView, onViewChange, entriesCount, prizesCoun
   const [logo, setLogo] = useState<{ type: "text" | "image" | "icon"; value: string } | null>(null)
   const [systemName, setSystemName] = useState("Random Name Lucky Draw System")
   const [theme, setTheme] = useState<"light" | "dark">("light")
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   useEffect(() => {
     const loadSettings = () => {
@@ -71,6 +72,59 @@ export function SiteHeader({ currentView, onViewChange, entriesCount, prizesCoun
     setTheme(newTheme)
     localStorage.setItem("theme", newTheme)
     document.documentElement.classList.toggle("dark", newTheme === "dark")
+  }
+
+  // Check fullscreen status
+  useEffect(() => {
+    const checkFullscreen = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    // Check initial state
+    checkFullscreen()
+
+    // Listen for fullscreen changes
+    document.addEventListener("fullscreenchange", checkFullscreen)
+    document.addEventListener("webkitfullscreenchange", checkFullscreen)
+    document.addEventListener("mozfullscreenchange", checkFullscreen)
+    document.addEventListener("MSFullscreenChange", checkFullscreen)
+
+    return () => {
+      document.removeEventListener("fullscreenchange", checkFullscreen)
+      document.removeEventListener("webkitfullscreenchange", checkFullscreen)
+      document.removeEventListener("mozfullscreenchange", checkFullscreen)
+      document.removeEventListener("MSFullscreenChange", checkFullscreen)
+    }
+  }, [])
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        // Enter fullscreen
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen()
+        } else if ((document.documentElement as any).webkitRequestFullscreen) {
+          await (document.documentElement as any).webkitRequestFullscreen()
+        } else if ((document.documentElement as any).mozRequestFullScreen) {
+          await (document.documentElement as any).mozRequestFullScreen()
+        } else if ((document.documentElement as any).msRequestFullscreen) {
+          await (document.documentElement as any).msRequestFullscreen()
+        }
+      } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen()
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen()
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen()
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling fullscreen:", error)
+    }
   }
 
   return (
@@ -149,8 +203,8 @@ export function SiteHeader({ currentView, onViewChange, entriesCount, prizesCoun
             Settings
           </Button>
           
-          {/* Theme Toggle */}
-          <div className="ml-2 border-l pl-2">
+          {/* Theme Toggle and Fullscreen */}
+          <div className="ml-2 border-l pl-2 flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
@@ -162,6 +216,19 @@ export function SiteHeader({ currentView, onViewChange, entriesCount, prizesCoun
                 <Moon className="size-5" />
               ) : (
                 <Sun className="size-5" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleFullscreen}
+              className="size-9"
+              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            >
+              {isFullscreen ? (
+                <Minimize className="size-5" />
+              ) : (
+                <Maximize className="size-5" />
               )}
             </Button>
           </div>

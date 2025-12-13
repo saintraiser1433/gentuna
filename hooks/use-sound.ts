@@ -46,7 +46,13 @@ export function useSound() {
     if (soundSettings) {
       try {
         const parsed = JSON.parse(soundSettings)
-        setSettings({ ...defaultSettings, ...parsed })
+        // Ensure enabled defaults to true if not explicitly set to false
+        const loadedSettings = { 
+          ...defaultSettings, 
+          ...parsed,
+          enabled: parsed.enabled !== undefined ? parsed.enabled : true
+        }
+        setSettings(loadedSettings)
         return
       } catch (e) {
         console.error("Error loading sound settings:", e)
@@ -67,10 +73,18 @@ export function useSound() {
           setSettings({ ...defaultSettings, ...soundSettingsFromDraw })
           // Save to soundSettings for future use
           localStorage.setItem("soundSettings", JSON.stringify(soundSettingsFromDraw))
+        } else {
+          // No sound settings in drawSettings, use defaults
+          setSettings(defaultSettings)
         }
       } catch (e) {
         console.error("Error loading draw settings:", e)
+        // On error, use defaults
+        setSettings(defaultSettings)
       }
+    } else {
+      // No settings found, use defaults
+      setSettings(defaultSettings)
     }
   }
 
@@ -101,6 +115,25 @@ export function useSound() {
       // Create a simple beep sound using Web Audio API
       try {
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+        
+        // Resume audio context on first user interaction (required by browser autoplay policy)
+        const resumeAudioContext = async () => {
+          if (audioContext.state === 'suspended') {
+            try {
+              await audioContext.resume()
+              console.log("Audio context resumed on user interaction")
+            } catch (e) {
+              console.error("Error resuming audio context:", e)
+            }
+          }
+        }
+        
+        // Add event listeners for user interaction to resume audio context
+        const events = ['click', 'touchstart', 'keydown']
+        events.forEach(event => {
+          document.addEventListener(event, resumeAudioContext, { once: true })
+        })
+        
         const createTootSound = () => {
           try {
             // Create "toot toot" - two quick beeps
@@ -153,10 +186,6 @@ export function useSound() {
         // Create ticking sound function
         const createTickSound = () => {
           try {
-            if (audioContext.state === 'suspended') {
-              audioContext.resume().catch(() => {})
-            }
-            
             // Get current settings from localStorage
             const drawSettings = localStorage.getItem("drawSettings")
             let drawSound = ""
@@ -172,15 +201,36 @@ export function useSound() {
             // Only play default ticking sound if no custom draw sound is set
             // Custom draw sound is handled separately in the useEffect hook with looping
             if (!drawSound || !drawSound.trim()) {
-              // Use default ticking sound
-              playDefaultTickSound(audioContext)
+              // Ensure audio context is resumed before playing
+              const playTick = async () => {
+                try {
+                  if (audioContext.state === 'suspended') {
+                    await audioContext.resume()
+                  }
+                  // Use default ticking sound
+                  playDefaultTickSound(audioContext)
+                } catch (e) {
+                  console.error("Error resuming audio context for tick:", e)
+                  // Try to play anyway if resume fails
+                  try {
+                    playDefaultTickSound(audioContext)
+                  } catch (playError) {
+                    console.error("Error playing tick sound:", playError)
+                  }
+                }
+              }
+              playTick()
             }
             // If custom sound is set, it's already looping in the useEffect, so don't play it here
           } catch (e) {
             console.error("Error creating tick sound:", e)
             // Fallback to default if anything fails
             if (spinningSoundRef.current?.audioContext) {
-              playDefaultTickSound(spinningSoundRef.current.audioContext)
+              try {
+                playDefaultTickSound(spinningSoundRef.current.audioContext)
+              } catch (fallbackError) {
+                console.error("Error in fallback tick sound:", fallbackError)
+              }
             }
           }
         }
@@ -368,25 +418,14 @@ export function useSound() {
       if ((!drawSound || !drawSound.trim()) && currentEntryIndex !== lastEntryIndex && (lastEntryIndex === -1 || timeSinceLastTick > 30)) {
         // Entry passed center/indicator! Play default tick sound
         try {
-          // Ensure audio context is resumed
-          const playTick = () => {
-            if (createTickSound) {
-              createTickSound()
-            }
+          // Always try to play the tick sound
+          // The createTickSound function will handle resuming the audio context
+          if (createTickSound) {
+            createTickSound()
             lastTootTimeRef.current = now
             if (spinningSoundRef.current) {
               spinningSoundRef.current.lastEntryIndex = currentEntryIndex
             }
-          }
-          
-          if (audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-              playTick()
-            }).catch((e) => {
-              console.error("Error resuming audio context for tick:", e)
-            })
-          } else {
-            playTick()
           }
         } catch (e) {
           console.error("Error playing tick sound:", e)

@@ -356,6 +356,7 @@ function PrizesTable({
 export function LuckyDraw() {
   const { startSpinningSound, stopSpinningSound, updateSpinSpeed, checkEntryPassed, playModalMusic, stopModalMusic } = useSound()
   const [currentView, setCurrentView] = useState<View>("main")
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [entries, setEntries] = useState<Entry[]>([])
   const [draws, setDraws] = useState<Draw[]>([])
   // Results table state
@@ -369,6 +370,29 @@ export function LuckyDraw() {
   const [winnersCardPage, setWinnersCardPage] = useState(1)
   const [winnersCardPageSize, setWinnersCardPageSize] = useState(10)
   const [prizes, setPrizes] = useState<Prize[]>([])
+
+  // Check fullscreen status
+  useEffect(() => {
+    const checkFullscreen = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    // Check initial state
+    checkFullscreen()
+
+    // Listen for fullscreen changes
+    document.addEventListener("fullscreenchange", checkFullscreen)
+    document.addEventListener("webkitfullscreenchange", checkFullscreen)
+    document.addEventListener("mozfullscreenchange", checkFullscreen)
+    document.addEventListener("MSFullscreenChange", checkFullscreen)
+
+    return () => {
+      document.removeEventListener("fullscreenchange", checkFullscreen)
+      document.removeEventListener("webkitfullscreenchange", checkFullscreen)
+      document.removeEventListener("mozfullscreenchange", checkFullscreen)
+      document.removeEventListener("MSFullscreenChange", checkFullscreen)
+    }
+  }, [])
   const [loading, setLoading] = useState(false)
   const [drawing, setDrawing] = useState(false)
   const [lastDraw, setLastDraw] = useState<Draw | null>(null)
@@ -2012,23 +2036,23 @@ export function LuckyDraw() {
 
   return (
     <div className="[--header-height:calc(--spacing(14))]">
-      <div className="flex flex-col min-h-screen" style={{ backgroundColor: settings?.backgroundColor || undefined }}>
+      <div className={`flex flex-col ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={{ backgroundColor: settings?.backgroundColor || undefined }}>
         <SiteHeader
           currentView={currentView}
           onViewChange={setCurrentView}
           entriesCount={entries.length}
           prizesCount={prizes.length}
         />
-        <main className="flex-1">
-          <div className="w-full max-w-7xl mx-auto p-4 space-y-4">
+        <main className={`flex-1 ${isFullscreen ? 'overflow-hidden flex flex-col' : ''}`}>
+          <div className={`w-full ${isFullscreen ? 'max-w-full px-2 sm:px-4 md:px-6 lg:px-8 flex-1 flex flex-col min-h-0' : 'max-w-7xl mx-auto p-4'} ${isFullscreen ? 'py-2' : 'space-y-4'}`}>
         {/* Main View */}
         {currentView === "main" && (
-          <div className="relative">
+          <div className={`relative ${isFullscreen ? 'h-full flex flex-col' : ''}`}>
             {/* Glowing background effect */}
             <div className="absolute inset-0 bg-gradient-to-r from-blue-200/20 via-purple-200/20 to-orange-200/20 rounded-2xl blur-3xl -z-10" />
             
-            <div className="flex flex-col items-center justify-center relative z-10">
-                <div className="w-full">
+            <div className={`flex flex-col items-center justify-center relative z-10 ${isFullscreen ? 'flex-1 min-h-0' : ''}`}>
+                <div className={`w-full ${isFullscreen ? 'flex flex-col flex-1 min-h-0 justify-between' : ''}`}>
                   {/* Current Prize Display - Automatically shows from draw settings */}
                   {(() => {
                     // Get valid prize assignments
@@ -2037,8 +2061,8 @@ export function LuckyDraw() {
                     // If no prizes are set up, show "PRIZES NOT SETUP YET"
                     if (filteredAssignments.length === 0) {
                       return (
-                        <div className="mb-3 p-3 bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg">
-                          <h3 className="text-lg font-black text-white drop-shadow-lg">
+                        <div className={`${isFullscreen ? 'mb-2 p-2' : 'mb-3 p-3'} bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg`}>
+                          <h3 className={`${isFullscreen ? 'text-2xl md:text-3xl lg:text-4xl' : 'text-lg'} font-black text-white drop-shadow-lg`}>
                             PRIZES NOT SETUP YET
                           </h3>
                         </div>
@@ -2060,8 +2084,8 @@ export function LuckyDraw() {
                     // Check if remaining winners is 0
                     if (remainingWinners === 0) {
                       return (
-                        <div className="mb-3 p-3 bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg">
-                          <h3 className="text-5xl font-black text-white drop-shadow-lg">
+                        <div className={`${isFullscreen ? 'mb-2 p-2' : 'mb-3 p-3'} bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg`}>
+                          <h3 className={`${isFullscreen ? 'text-3xl md:text-4xl lg:text-5xl xl:text-6xl' : 'text-5xl'} font-black text-white drop-shadow-lg`}>
                             WAITING FOR NEXT PRIZE
                           </h3>
                         </div>
@@ -2070,8 +2094,8 @@ export function LuckyDraw() {
                     
                     // Show the current prize being drawn
                     return (
-                      <div className="mb-3 p-3 bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg">
-                        <h3 className="text-5xl font-black text-white drop-shadow-lg">
+                      <div className={`${isFullscreen ? 'mb-2 p-2' : 'mb-3 p-3'} bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg`}>
+                        <h3 className={`${isFullscreen ? 'text-3xl md:text-4xl lg:text-5xl xl:text-6xl' : 'text-5xl'} font-black text-white drop-shadow-lg`}>
                           PRIZE : {prize.name.toUpperCase()}
                         </h3>
                       </div>
@@ -2079,7 +2103,7 @@ export function LuckyDraw() {
                   })()}
                   
                   {/* Roulette Type Toggle */}
-                  <div className="flex justify-center mb-3 relative z-50">
+                  <div className={`flex justify-center ${isFullscreen ? 'mb-2' : 'mb-3'} relative z-50`}>
                     <div className="inline-flex rounded-lg border p-1 bg-muted">
                       <Button
                         variant={rouletteType === "vertical" ? "default" : "ghost"}
@@ -2104,7 +2128,7 @@ export function LuckyDraw() {
 
                   {/* Vertical Roulette */}
                   {rouletteType === "vertical" && (
-                    <div className="relative h-[500px] flex items-center justify-center mb-4 px-4">
+                    <div className={`relative ${isFullscreen ? 'h-[calc(100vh-400px)] min-h-[400px] max-h-[800px]' : 'h-[500px]'} flex items-center justify-center ${isFullscreen ? 'mb-2' : 'mb-4'} px-4`}>
                       {entries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
@@ -2131,7 +2155,7 @@ export function LuckyDraw() {
 
                   {/* Wheel Roulette */}
                   {rouletteType === "wheel" && (
-                    <div className="relative h-[550px] flex items-center justify-center mb-4">
+                    <div className={`relative ${isFullscreen ? 'h-[calc(100vh-400px)] min-h-[400px] max-h-[800px]' : 'h-[550px]'} flex items-center justify-center ${isFullscreen ? 'mb-2' : 'mb-4'}`}>
                       {entries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
@@ -2139,7 +2163,7 @@ export function LuckyDraw() {
                           <p className="text-sm mt-2">Your lucky winners will appear here!</p>
                         </div>
                       ) : (
-                        <div className="relative w-[550px] h-[550px] flex items-center justify-center">
+                        <div className={`relative ${isFullscreen ? 'w-[min(550px,calc(100vh-450px))] h-[min(550px,calc(100vh-450px))] min-w-[400px] min-h-[400px] max-w-[800px] max-h-[800px]' : 'w-[550px] h-[550px]'} flex items-center justify-center`}>
                           {/* Winner Indicator - Right Side Arrow (fixed, outside wheel) */}
                           <div className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-5 z-10 pointer-events-none">
                             {/* Arrow pointing left (towards wheel) */}
@@ -2187,8 +2211,8 @@ export function LuckyDraw() {
                   )}
                   
                   {/* Run Draw Button */}
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="w-full max-w-xs flex flex-col gap-3">
+                  <div className={`flex flex-col items-center ${isFullscreen ? 'gap-2' : 'gap-4'}`}>
+                    <div className={`w-full ${isFullscreen ? 'max-w-md' : 'max-w-xs'} flex flex-col ${isFullscreen ? 'gap-2' : 'gap-3'}`}>
                       <Button
                         type="button"
                         onClick={(e) => {

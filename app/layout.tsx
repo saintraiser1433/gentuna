@@ -18,8 +18,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={archivo.variable}>
-      <body className="font-sans antialiased">
+    <html lang="en" className={archivo.variable} style={{ height: '100%' }}>
+      <body className="font-sans antialiased" style={{ height: '100%', margin: 0 }}>
         {children}
       </body>
     </html>
