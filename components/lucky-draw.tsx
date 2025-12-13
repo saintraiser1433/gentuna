@@ -34,7 +34,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { useToast } from "@/components/ui/toast"
+import { toast } from "react-toastify"
+import { ToastContainer } from "react-toastify"
+import "react-toastify/dist/ReactToastify.css"
 import { useSound } from "@/hooks/use-sound"
 
 interface Entry {
@@ -79,7 +81,7 @@ interface Prize {
 }
 
 // Entries Table Component
-function EntriesTable({ entries, onDelete }: { entries: Entry[]; onDelete: (id: string, name: string) => void }) {
+function EntriesTable({ entries, onDelete, onEdit }: { entries: Entry[]; onDelete: (id: string, name: string) => void; onEdit: (id: string, name: string) => void }) {
   // Hooks must be called before any conditional returns
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -110,14 +112,26 @@ function EntriesTable({ entries, onDelete }: { entries: Entry[]; onDelete: (id: 
             className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-3 hover:bg-blue-100 transition-colors"
           >
             <span className="flex-1 text-sm font-medium">{entry.name}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onDelete(entry.id, entry.name)}
-              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
-            >
-              <Trash2 className="size-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onEdit(entry.id, entry.name)}
+                className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-1"
+                title="Edit entry"
+              >
+                <Edit2 className="size-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(entry.id, entry.name)}
+                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
+                title="Delete entry"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
           </div>
         ))}
       </div>
@@ -265,14 +279,26 @@ function PrizesTable({
             >
               <div className={`${getPrizeColor(originalIndex)} rounded-full size-4 shrink-0`} />
               <span className="flex-1 text-sm font-medium">{prize.name}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onDelete(prize.id, prize.name)}
-                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
-              >
-                <Trash2 className="size-4" />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onEdit(prize)}
+                  className="text-orange-500 hover:text-orange-700 hover:bg-orange-50 p-1"
+                  title="Edit prize"
+                >
+                  <Edit2 className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDelete(prize.id, prize.name)}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
+                  title="Delete prize"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
             </div>
           )
         })}
@@ -433,6 +459,8 @@ export function LuckyDraw() {
   const [bulkEntries, setBulkEntries] = useState("")
   const [entryMode, setEntryMode] = useState<"bulk" | "import">("bulk")
   const [importing, setImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0, percentage: 0 })
+  const [showImportProgress, setShowImportProgress] = useState(false)
   const [prizeAssignments, setPrizeAssignments] = useState<Array<{ prizeId: string; count: number }>>([])
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false)
@@ -454,7 +482,9 @@ export function LuckyDraw() {
   const [showDeletePrizeConfirmDialog, setShowDeletePrizeConfirmDialog] = useState(false)
   const [pendingDeletePrizeId, setPendingDeletePrizeId] = useState<string | null>(null)
   const [pendingDeletePrizeName, setPendingDeletePrizeName] = useState<string>("")
-  const { showToast, ToastContainer } = useToast()
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
+  const [editingEntryName, setEditingEntryName] = useState<string>("")
+  // Toast notifications using react-toastify
 
   // Apply settings to document
   useEffect(() => {
@@ -838,18 +868,26 @@ export function LuckyDraw() {
   useEffect(() => {
     // Only initialize if not currently drawing and state is not set
     if (!isDrawingInProgress && prizes.length > 0 && prizeAssignments.length > 0) {
-      // Filter valid assignments
+      // Filter valid assignments and sort by prize order (ascending)
       const validPrizeIds = new Set(prizes.map(p => p.id))
-      const filteredAssignments = prizeAssignments.filter(a => 
-        a.prizeId && 
-        a.prizeId.trim() !== "" && 
-        a.count > 0 &&
-        validPrizeIds.has(a.prizeId)
-      )
+      const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
+      
+      const filteredAssignments = prizeAssignments
+        .filter(a => 
+          a.prizeId && 
+          a.prizeId.trim() !== "" && 
+          a.count > 0 &&
+          validPrizeIds.has(a.prizeId)
+        )
+        .sort((a, b) => {
+          const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
+          const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
+          return indexA - indexB // Ascending order
+        })
       
       // If we have valid assignments but prize state is not initialized
       if (filteredAssignments.length > 0 && (remainingWinners === 0 || currentPrizeName === "")) {
-        // Initialize to first prize
+        // Initialize to first prize (lowest index with count > 0)
         const firstAssignment = filteredAssignments[0]
         const firstPrize = prizes.find(p => p.id === firstAssignment.prizeId)
         
@@ -991,7 +1029,7 @@ export function LuckyDraw() {
   const getVerticalRouletteItems = () => {
     if (rouletteType !== "vertical" || entries.length === 0) return []
     
-    const itemHeight = 70
+    const itemHeight = settings?.verticalRouletteContainerHeight || 70
     const itemSpacing = 10
     const totalItemHeight = itemHeight + itemSpacing
     const loopHeight = entries.length * totalItemHeight
@@ -1030,10 +1068,11 @@ export function LuckyDraw() {
       const isNearCenter = distanceFromCenter < totalItemHeight * 0.6
       const color = verticalColors[entryIndex % verticalColors.length]
       
+      const textSize = settings?.verticalRouletteTextSize || 18
       itemsToRender.push(
         <div
           key={`${entry.id}-${i}`}
-          className={`absolute left-0 right-0 mx-6 rounded-2xl px-6 py-5 font-bold text-lg shadow-lg ${color} text-white`}
+          className={`absolute left-0 right-0 mx-6 rounded-2xl px-6 py-5 font-bold shadow-lg ${color} text-white`}
           style={{
             top: '50%',
             height: `${itemHeight}px`,
@@ -1042,10 +1081,19 @@ export function LuckyDraw() {
             zIndex: isNearCenter ? 20 : 10,
             transition: 'none',
             willChange: 'transform',
+            fontSize: `${textSize}px`
           }}
         >
-          <div className="text-center flex items-center justify-center h-full">
-            {entry.name.toUpperCase()}
+          <div className="text-center flex items-center justify-center h-full w-full px-2">
+            <span 
+              className="block truncate"
+              style={{
+                maxWidth: '100%'
+              }}
+              title={entry.name.toUpperCase()}
+            >
+              {entry.name.toUpperCase()}
+            </span>
           </div>
         </div>
       )
@@ -1059,11 +1107,9 @@ export function LuckyDraw() {
   const wheelSvgElements = useMemo(() => {
     if (rouletteType !== "wheel" || entries.length === 0) return []
     
-    // For very large entry counts (>200), limit the number of segments rendered
-    // This prevents the browser from hanging when creating thousands of SVG elements
-    const maxSegments = 200
-    const shouldLimit = entries.length > maxSegments
-    const entriesToRender = shouldLimit ? entries.slice(0, maxSegments) : entries
+    // Render all entries - performance is handled by limiting text rendering complexity
+    // For very large counts, we'll use smaller font and fewer characters, but show all segments
+    const entriesToRender = entries
     
     const colors = [
       ['#f97316', '#ea580c'], // orange
@@ -1083,21 +1129,48 @@ export function LuckyDraw() {
     const radius = 100
     const elements: JSX.Element[] = []
     
+    // Calculate responsive font size based on total entry count
+    // More entries = smaller text to fit better, but keep it readable
+    let fontSize: number
+    let maxNameLength: number
+    if (totalEntries > 1000) {
+      fontSize = 4 // Very small for 1000+ entries
+      maxNameLength = 5 // Show first 5 chars
+    } else if (totalEntries > 500) {
+      fontSize = 5 // Small for 500-1000 entries
+      maxNameLength = 6 // Show first 6 chars
+    } else if (totalEntries > 300) {
+      fontSize = 6 // Small for 300-500 entries
+      maxNameLength = 8
+    } else if (totalEntries > 200) {
+      fontSize = 7 // Medium-small for 200-300 entries
+      maxNameLength = 10
+    } else if (totalEntries > 100) {
+      fontSize = 8 // Medium for 100-200 entries
+      maxNameLength = 12
+    } else {
+      fontSize = 10 // Normal for <100 entries
+      maxNameLength = 18
+    }
+      
+    // Helper functions for color calculation
+    const getLuminance = (r: number, g: number, b: number) => {
+      return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    }
+    
+    const hexToRgb = (hex: string) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : { r: 0, g: 0, b: 0 }
+    }
+    
     entriesToRender.forEach((entry, renderIndex) => {
       const index = renderIndex
-      const colors = [
-        ['#f97316', '#ea580c'], // orange
-        ['#3b82f6', '#2563eb'], // blue
-        ['#eab308', '#ca8a04'], // yellow
-        ['#a855f7', '#9333ea'], // purple
-        ['#ec4899', '#db2777'], // pink
-        ['#22c55e', '#16a34a'], // green
-        ['#ef4444', '#dc2626'], // red
-        ['#6366f1', '#4f46e5'], // indigo
-        ['#14b8a6', '#0d9488'], // teal
-        ['#06b6d4', '#0891b2'], // cyan
-      ]
       const [color1, color2] = colors[index % colors.length]
+      // Use total entries angle for proper segment spacing (all entries)
       const startAngle = index * anglePerSegment - 90 // Start from top
       const endAngle = startAngle + anglePerSegment
       
@@ -1123,9 +1196,38 @@ export function LuckyDraw() {
             `Z`
           ].join(' ')
       
-      // Calculate text position - place vertically along the segment
+      // Calculate text position - place horizontally in the middle of the segment
       const textAngle = startAngle + anglePerSegment / 2
       const textRad = (textAngle * Math.PI) / 180
+      
+      // Position text in the middle of the segment (between center and edge)
+      // Adjust radius based on total entry count - closer to center for more entries
+      let textRadius: number
+      if (totalEntries > 1000) {
+        textRadius = 75 // Closer to center for very large counts
+      } else if (totalEntries > 500) {
+        textRadius = 73 // Closer to center for very large counts
+      } else if (totalEntries > 300) {
+        textRadius = 71
+      } else if (totalEntries > 200) {
+        textRadius = 69
+      } else if (totalEntries > 100) {
+        textRadius = 67
+      } else {
+        textRadius = 65 // Normal position
+      }
+      
+      // Calculate text position
+      const textX = 100 + textRadius * Math.cos(textRad)
+      const textY = 100 + textRadius * Math.sin(textRad)
+      
+      // Determine text color based on segment brightness for better contrast
+      // Use the lighter color (color1) to determine text color
+      const rgb = hexToRgb(color1)
+      const luminance = getLuminance(rgb.r, rgb.g, rgb.b)
+      // If segment is bright (luminance > 0.5), use dark text, otherwise use white text
+      const textColor = luminance > 0.5 ? '#000000' : '#FFFFFF'
+      const textStroke = luminance > 0.5 ? '#FFFFFF' : '#000000'
       
       elements.push(
         <g key={entry.id}>
@@ -1141,42 +1243,42 @@ export function LuckyDraw() {
             stroke="white"
             strokeWidth="2"
           />
-          {/* Text positioned vertically along radius, letters rotated to follow segment */}
+          {/* Text positioned horizontally in the middle of the segment */}
           {(() => {
-            const displayName = entry.name.length > 12 ? entry.name.substring(0, 11) + '.' : entry.name.toUpperCase()
-            const chars = displayName.split('')
-            // Position characters along the radius (from center to edge)
-            const startRadius = 45
-            const endRadius = 85
-            const radiusStep = (endRadius - startRadius) / Math.max(1, chars.length - 1)
+            // Truncate name based on entry count
+            let displayName = entry.name
+            if (displayName.length > maxNameLength) {
+              displayName = displayName.substring(0, maxNameLength - 3) + '...'
+            } else {
+              displayName = displayName.toUpperCase()
+            }
             
-            return chars.map((char, charIndex) => {
-              // Calculate position along the radius
-              const charRadius = startRadius + (charIndex * radiusStep)
-              const charRad = textRad
-              const charX = 100 + charRadius * Math.cos(charRad)
-              const charY = 100 + charRadius * Math.sin(charRad)
-              
-              // Rotate each character to align with the segment angle (oriented towards center)
-              // The rotation angle is the segment center angle
-              return (
-                <text
-                  key={charIndex}
-                  x={charX}
-                  y={charY}
-                  fill="white"
-                  fontSize="8"
-                  fontWeight="bold"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  // Rotate to align with segment angle (letters oriented towards center)
-                  transform={`rotate(${textAngle}, ${charX}, ${charY})`}
-                  style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
-                >
-                  {char}
-                </text>
-              )
-            })
+            return (
+              <text
+                x={textX}
+                y={textY}
+                fill={textColor}
+                fontSize={fontSize}
+                fontWeight="bold"
+                textAnchor="middle"
+                dominantBaseline="middle"
+                // Rotate text to align with segment angle (horizontal within segment)
+                // Add 90 degrees to make text horizontal (perpendicular to radius)
+                transform={`rotate(${textAngle + 90}, ${textX}, ${textY})`}
+                style={{ 
+                  filter: luminance > 0.5 
+                    ? 'drop-shadow(0 0 2px rgba(255,255,255,0.8))' 
+                    : 'drop-shadow(0 0 2px rgba(0,0,0,0.8))',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  stroke: textStroke,
+                  strokeWidth: '0.3px',
+                  paintOrder: 'stroke fill'
+                }}
+              >
+                {displayName}
+              </text>
+            )
           })()}
         </g>
       )
@@ -1231,7 +1333,7 @@ export function LuckyDraw() {
     }
   }
 
-  // Parse CSV line - only extract name
+  // Parse CSV line - extract name from CSV format
   const parseCSVLine = (line: string): { name: string } => {
     // Simple CSV parser - handles quoted and unquoted values
     const parts: string[] = []
@@ -1251,22 +1353,54 @@ export function LuckyDraw() {
     }
     parts.push(current.trim())
     
-    // Only use the first part as name
+    // Use the first part as name (for CSV files with multiple columns)
     return {
       name: parts[0] || line.trim(),
     }
   }
 
-  // Parse bulk entries text - only extract names
+  // Parse bulk entries text - extract names
   const parseBulkEntries = (text: string): Array<{ name: string }> => {
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
     return lines.map(line => {
-      // Check if line contains comma (CSV format) or tab - use first part as name
-      if (line.includes(',') || line.includes('\t')) {
-        return parseCSVLine(line)
+      // Check if line contains tab (TSV format) - use first column
+      if (line.includes('\t')) {
+        const parts = line.split('\t')
+        return { name: parts[0].trim() || line.trim() }
       }
-      // Simple format: just name
-      return { name: line }
+      
+      // For lines with commas, check if it's CSV format or a name with comma
+      // CSV format typically has 3+ columns or the second part looks like a different data type
+      // Name format like "LASTNAME, FIRSTNAME MIDDLENAME" should use entire line
+      if (line.includes(',')) {
+        const parts = line.split(',').map(p => p.trim()).filter(p => p.length > 0)
+        
+        // If 3+ parts, likely CSV - use first column
+        if (parts.length >= 3) {
+          return { name: parts[0] }
+        }
+        
+        // If 2 parts, check if it looks like "LASTNAME, FIRSTNAME" format
+        // In this format, the second part usually contains spaces (first name + middle name)
+        // or is a reasonable length (not just a single letter or code)
+        if (parts.length === 2) {
+          const secondPart = parts[1]
+          // If second part has spaces or multiple words, it's part of the name
+          // Use entire line (e.g., "ABAD, JEFFRY CANTO")
+          if (secondPart.includes(' ') || secondPart.length > 3) {
+            return { name: line.trim() }
+          }
+          // If second part is very short (1-3 chars), might be a code/initial - use first part only
+          // But for names, we'll default to using entire line to be safe
+          return { name: line.trim() }
+        }
+        
+        // Single part - use entire line
+        return { name: line.trim() }
+      }
+      
+      // Simple format: just name (no commas or tabs)
+      return { name: line.trim() }
     })
   }
 
@@ -1274,7 +1408,7 @@ export function LuckyDraw() {
   // Add bulk entries
   const handleAddBulkEntries = async () => {
     if (!bulkEntries.trim()) {
-      showToast("Please enter at least one entry", "warning")
+      toast.warning("Please enter at least one entry")
       return
     }
 
@@ -1283,7 +1417,7 @@ export function LuckyDraw() {
     const entryCount = validEntries.length
 
     if (entryCount === 0) {
-      showToast("No valid entries found", "warning")
+      toast.warning("No valid entries found")
       return
     }
 
@@ -1302,7 +1436,7 @@ export function LuckyDraw() {
       }
       
       message += "\n\nPlease remove duplicates before adding."
-      showToast(message, "error")
+      toast.error(message)
       return
     }
 
@@ -1342,13 +1476,13 @@ export function LuckyDraw() {
         await fetchEntries()
         
         if (errorCount > 0) {
-          showToast(`Added ${successCount} entries. ${errorCount} failed.`, "warning")
+          toast.warning(`Added ${successCount} entries. ${errorCount} failed.`)
         } else {
-          showToast(`Successfully added ${successCount} entries!`, "success")
+          toast.success(`Successfully added ${successCount} entries!`)
         }
       } catch (error) {
         console.error("Error adding bulk entries:", error)
-        showToast("Failed to add entries", "error")
+        toast.error("Failed to add entries")
       } finally {
         setLoading(false)
         setPendingAction(null)
@@ -1363,6 +1497,8 @@ export function LuckyDraw() {
     if (!file) return
 
     setImporting(true)
+    setShowImportProgress(true)
+    setImportProgress({ current: 0, total: 0, percentage: 0 })
 
     try {
       let text = await file.text()
@@ -1380,7 +1516,9 @@ export function LuckyDraw() {
       const validEntries = parsed.filter(e => e.name && e.name.trim())
       
       if (validEntries.length === 0) {
-        showToast("No valid entries found in the file", "warning")
+        toast.warning("No valid entries found in the file")
+        setShowImportProgress(false)
+        setImporting(false)
         return
       }
 
@@ -1399,14 +1537,22 @@ export function LuckyDraw() {
         }
         
         message += "\n\nPlease remove duplicates before importing."
-        showToast(message, "error")
+        toast.error(message)
+        setShowImportProgress(false)
+        setImporting(false)
         return
       }
+
+      // Initialize progress
+      const totalEntries = validEntries.length
+      setImportProgress({ current: 0, total: totalEntries, percentage: 0 })
 
       let successCount = 0
       let errorCount = 0
 
-      for (const entry of validEntries) {
+      // Import entries with progress tracking
+      for (let i = 0; i < validEntries.length; i++) {
+        const entry = validEntries[i]
         if (!entry.name) continue
         
         try {
@@ -1426,20 +1572,37 @@ export function LuckyDraw() {
         } catch (error) {
           errorCount++
         }
+        
+        // Update progress
+        const current = i + 1
+        const percentage = Math.round((current / totalEntries) * 100)
+        setImportProgress({ current, total: totalEntries, percentage })
+        
+        // Small delay to allow UI to update (optional, can be removed for faster import)
+        if (i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 10))
+        }
       }
 
       await fetchEntries()
       
+      // Hide progress after a brief delay
+      setTimeout(() => {
+        setShowImportProgress(false)
+        setImporting(false)
+      }, 500)
+      
       if (errorCount > 0) {
-        alert(`Imported ${successCount} entries. ${errorCount} failed.`)
+        toast.warning(`Imported ${successCount} entries. ${errorCount} failed.`)
       } else {
-        alert(`Successfully imported ${successCount} entries!`)
+        toast.success(`Successfully imported ${successCount} entries!`)
       }
     } catch (error) {
       console.error("Error importing file:", error)
-      alert("Failed to import file. Please ensure it's a valid CSV or text file.")
-    } finally {
+      toast.error("Failed to import file. Please ensure it's a valid CSV or text file.")
+      setShowImportProgress(false)
       setImporting(false)
+    } finally {
       // Reset file input
       e.target.value = ""
     }
@@ -1462,13 +1625,13 @@ export function LuckyDraw() {
 
       if (res.ok) {
         await fetchEntries()
-        showToast(`Entry "${pendingDeleteEntryName}" deleted successfully`, "success")
+        toast.success(`Entry "${pendingDeleteEntryName}" deleted successfully`)
       } else {
-        showToast("Failed to delete entry", "error")
+        toast.error("Failed to delete entry")
       }
     } catch (error) {
       console.error("Error deleting entry:", error)
-      showToast("Failed to delete entry", "error")
+      toast.error("Failed to delete entry")
     } finally {
       setShowDeleteConfirmDialog(false)
       setPendingDeleteEntryId(null)
@@ -1476,12 +1639,35 @@ export function LuckyDraw() {
     }
   }
 
+  // Function to enter fullscreen
+  const enterFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        // Enter fullscreen
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen()
+        } else if ((document.documentElement as any).webkitRequestFullscreen) {
+          await (document.documentElement as any).webkitRequestFullscreen()
+        } else if ((document.documentElement as any).mozRequestFullScreen) {
+          await (document.documentElement as any).mozRequestFullScreen()
+        } else if ((document.documentElement as any).msRequestFullscreen) {
+          await (document.documentElement as any).msRequestFullscreen()
+        }
+      }
+    } catch (error) {
+      console.error("Error entering fullscreen:", error)
+    }
+  }
+
   // Initialize or continue drawing (one click = one winner)
   const handleRunDraw = async () => {
     if (entries.length === 0) {
-      showToast("No entries available. Please add entries first.", "warning")
+      toast.warning("No entries available. Please add entries first.")
       return
     }
+
+    // Enter fullscreen when draw starts
+    await enterFullscreen()
 
     // If not currently in a drawing session, validate and start new session
     if (!isDrawingInProgress) {
@@ -1504,7 +1690,7 @@ export function LuckyDraw() {
       const num = filteredAssignments.reduce((sum, a) => sum + a.count, 0)
       
       if (num < 1) {
-        showToast("Please add at least one prize assignment with winners", "warning")
+        toast.warning("Please add at least one prize assignment with winners")
         return
       }
 
@@ -1524,7 +1710,7 @@ export function LuckyDraw() {
         const message = excludePrevious 
           ? `Not enough available entries. You have ${entries.length} total entries, but ${entries.length - availableEntries} are previous winners. Only ${availableEntries} entries are available, but you need ${num} winners.`
           : `Not enough entries. You have ${entries.length} entries, but need ${num} winners.`
-        showToast(message, "warning")
+        toast.warning(message)
         return
       }
 
@@ -1535,14 +1721,41 @@ export function LuckyDraw() {
       setAllDrawnWinners([])
     }
 
-    // Get current prize assignment - filter out invalid prize IDs
+    // Get current prize assignment - filter out invalid prize IDs and sort by prize order (ascending)
     const validPrizeIds = prizes.length > 0 ? new Set(prizes.map(p => p.id)) : new Set<string>()
-    const filteredAssignments = prizeAssignments.filter(a => 
-      a.prizeId && 
-      a.prizeId.trim() !== "" && 
-      a.count > 0 &&
-      (prizes.length === 0 || validPrizeIds.has(a.prizeId)) // Only check if prizes exist
-    )
+    const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
+    
+    // Filter and sort assignments by prize order (ascending)
+    const filteredAssignments = prizeAssignments
+      .filter(a => 
+        a.prizeId && 
+        a.prizeId.trim() !== "" && 
+        a.count > 0 &&
+        (prizes.length === 0 || validPrizeIds.has(a.prizeId)) // Only check if prizes exist
+      )
+      .sort((a, b) => {
+        const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
+        const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
+        return indexA - indexB // Ascending order
+      })
+    
+    if (filteredAssignments.length === 0) {
+      toast.warning("No prizes with winners configured. Please configure draw settings.")
+      setIsDrawingInProgress(false)
+      return
+    }
+    
+    // Reset to first valid prize if current index is invalid
+    if (currentPrizeIndex >= filteredAssignments.length || currentPrizeIndex < 0) {
+      setCurrentPrizeIndex(0)
+      const firstAssignment = filteredAssignments[0]
+      const firstPrize = prizes.find(p => p.id === firstAssignment.prizeId)
+      if (firstPrize) {
+        setCurrentPrizeName(firstPrize.name)
+        setRemainingWinners(firstAssignment.count)
+        setCurrentPrizeWinnerCount(0)
+      }
+    }
     
     if (currentPrizeIndex >= filteredAssignments.length) {
       // All prizes completed, show final results
@@ -1595,7 +1808,7 @@ export function LuckyDraw() {
 
       if (!res.ok) {
         const error = await res.json()
-        showToast(`Error: ${error.error}`, "error")
+        toast.error(`Error: ${error.error}`)
         setDrawing(false)
         return
       }
@@ -1611,14 +1824,16 @@ export function LuckyDraw() {
       await new Promise(resolve => setTimeout(resolve, 500))
       
       // Calculate winner position and target
-      const loopSize = rouletteType === "vertical" ? entries.length * 80 : 360
+      let loopSize = 360
       let targetPosition = 0
       
       if (rouletteType === "vertical") {
-        const itemHeight = 70
+        const itemHeight = settings?.verticalRouletteContainerHeight || 70
         const itemSpacing = 10
         const totalItemHeight = itemHeight + itemSpacing
+        loopSize = entries.length * totalItemHeight
         // Winner position - this puts the winner card at center (offset = 0)
+        // The yellow box is at center (50%), so we need the winner entry center to align with it
         targetPosition = winnerIndex * totalItemHeight
       } else if (rouletteType === "wheel") {
         const anglePerSegment = 360 / entries.length
@@ -1714,25 +1929,61 @@ export function LuckyDraw() {
           offsetRef.current = currentPosition
           setAnimationOffset(currentPosition)
           
-          // Decelerate speed based on spin time progress
-          // Keep full speed for most of the spin time (first 80-85%), then decelerate near the end
-          // This ensures it stays fast even with longer spin times
+          // Decelerate speed based on spin time progress - start slowing at 30% (last 70% slows down)
+          // Keep full speed for first 30%, then dramatically slow down for maximum suspense
           let speedMultiplier: number
-          if (progress < 0.85) {
-            // Maintain full speed for first 85% of spin time
-            // Slight decrease to make it feel natural, but stays very fast
-            speedMultiplier = 1.0 - (progress / 0.85) * 0.1 // Only 10% decrease over first 85%
+          if (progress < 0.30) {
+            // Maintain full speed for first 30% of spin time
+            // Very slight decrease to make it feel natural, but stays very fast
+            speedMultiplier = 1.0 - (progress / 0.30) * 0.01 // Only 1% decrease over first 30%
+          } else if (progress < 0.50) {
+            // Start decelerating in the 30-50% range (gradual slowdown begins)
+            const slowdownProgress = (progress - 0.30) / 0.20 // 0-1 for 30-50% range
+            speedMultiplier = 0.99 * (1 - Math.pow(slowdownProgress, 2.5)) // Stronger slowdown
+          } else if (progress < 0.70) {
+            // Moderate slowdown in 50-70% range (suspense building)
+            const suspenseProgress = (progress - 0.50) / 0.20 // 0-1 for 50-70% range
+            speedMultiplier = 0.3 * Math.pow(1 - suspenseProgress, 5) // Very strong deceleration
+          } else if (progress < 0.85) {
+            // Dramatic slowdown in 70-85% range (strong suspense)
+            const dramaticProgress = (progress - 0.70) / 0.15 // 0-1 for 70-85% range
+            speedMultiplier = 0.1 * Math.pow(1 - dramaticProgress, 7) // Very strong deceleration
+          } else if (progress < 0.94) {
+            // Extreme slowdown in 85-94% range (extreme suspense)
+            const extremeProgress = (progress - 0.85) / 0.09 // 0-1 for 85-94% range
+            speedMultiplier = 0.03 * Math.pow(1 - extremeProgress, 9) // Extreme deceleration
+          } else if (progress < 0.98) {
+            // Very slow in 94-98% range (maximum suspense)
+            const maxProgress = (progress - 0.94) / 0.04 // 0-1 for 94-98% range
+            speedMultiplier = 0.008 * Math.pow(1 - maxProgress, 12) // Maximum deceleration
           } else {
-            // Decelerate dramatically in last 15% of spin time
-            const remainingProgress = (progress - 0.85) / 0.15 // 0-1 for last 15%
-            speedMultiplier = 0.9 * Math.pow(1 - remainingProgress, 3) // Cubic deceleration in last 15%
+            // Extremely slow crawl in last 2% (ultimate suspense before reveal)
+            const finalProgress = (progress - 0.98) / 0.02 // 0-1 for last 2%
+            speedMultiplier = 0.002 * Math.pow(1 - finalProgress, 15) // Ultimate deceleration
           }
           
           const currentSpeed = initialSpinSpeed * speedMultiplier
           
-          // Allow speed to get very slow near the end (last 5% of spin time)
-          // This ensures smooth stopping at the spin time limit
-          const minSpeed = progress > 0.95 ? 5 : 10 // Very slow when very close to spin time limit
+          // Ensure minimum speed for smooth stopping (very slow near the end)
+          let minSpeed: number
+          if (progress > 0.995) {
+            minSpeed = 0.2 // Extremely slow in last 0.5%
+          } else if (progress > 0.98) {
+            minSpeed = 0.5 // Very slow in last 2%
+          } else if (progress > 0.94) {
+            minSpeed = 1 // Slow in last 6%
+          } else if (progress > 0.85) {
+            minSpeed = 2 // Moderate slow in last 15%
+          } else if (progress > 0.70) {
+            minSpeed = 3 // Slight slow in last 30%
+          } else if (progress > 0.50) {
+            minSpeed = 5 // Minimum slow in last 50%
+          } else if (progress > 0.30) {
+            minSpeed = 8 // Minimum slow in last 70%
+          } else {
+            minSpeed = 15 // Minimum speed for first 30%
+          }
+          
           const finalSpeed = Math.max(minSpeed, currentSpeed)
           
           setCurrentAnimationSpeed(finalSpeed)
@@ -1741,14 +1992,41 @@ export function LuckyDraw() {
           updateSpinSpeed(finalSpeed)
           
           // Check if entry passed center/indicator and play tick sound
+          // Always call checkEntryPassed during controlled animation (isSpinning is true)
           checkEntryPassed(offsetRef.current)
           
           requestAnimationFrame(animateToTarget)
         } else {
           // Animation complete - lock position to prevent flickering
-          const loopSize = rouletteType === "vertical" ? entries.length * 80 : 360
+          // Calculate loopSize based on current settings
+          let loopSize = 360
+          if (rouletteType === "vertical") {
+            const itemHeight = settings?.verticalRouletteContainerHeight || 70
+            const itemSpacing = 10
+            const totalItemHeight = itemHeight + itemSpacing
+            loopSize = entries.length * totalItemHeight
+          }
+          
           let normalizedPosition = targetPosition % loopSize
           if (normalizedPosition < 0) normalizedPosition += loopSize
+          
+          // For vertical, verify the winner is correctly positioned in the yellow box
+          if (rouletteType === "vertical" && entries.length > 0) {
+            const itemHeight = settings?.verticalRouletteContainerHeight || 70
+            const itemSpacing = 10
+            const totalItemHeight = itemHeight + itemSpacing
+            // Calculate which entry should be at center based on normalized position
+            const entryFloat = normalizedPosition / totalItemHeight
+            const calculatedIndex = Math.floor(entryFloat + 0.5) % entries.length
+            const actualIndex = calculatedIndex < 0 ? calculatedIndex + entries.length : calculatedIndex
+            
+            if (actualIndex !== winnerIndex) {
+              // Recalculate to ensure winner is exactly centered
+              const correctPosition = winnerIndex * totalItemHeight
+              normalizedPosition = correctPosition % loopSize
+              if (normalizedPosition < 0) normalizedPosition += loopSize
+            }
+          }
           
           // For wheel, verify the winner is correct and ensure we're in the center of segment, not on separator
           if (rouletteType === "wheel" && entries.length > 0) {
@@ -1806,19 +2084,16 @@ export function LuckyDraw() {
       // Add small buffer (50ms) to ensure animation completes
       await new Promise(resolve => setTimeout(resolve, totalDuration + 50))
       
-      // After animation completes, calculate remaining reveal delay
-      // Reveal delay is the total time from draw start to winner reveal
-      // If revealDelay > spinTime, wait the difference
-      const totalRevealTime = revealDelay * 1000 // Total time from start
-      const animationTime = totalDuration + 50 // Time for animation + buffer
-      const remainingDelay = Math.max(0, totalRevealTime - animationTime)
+      // After animation completes, wait for the reveal delay
+      // Reveal delay is the time to wait AFTER the animation completes before showing the winner
+      const revealDelayMs = revealDelay * 1000
       
-      if (remainingDelay > 0) {
-        await new Promise(resolve => setTimeout(resolve, remainingDelay))
+      if (revealDelayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, revealDelayMs))
       }
       
-      // Remove winner from entries list
-      setEntries(prevEntries => prevEntries.filter(e => e.id !== winner.entry.id))
+      // Don't remove winner from entries list yet - it will be removed when "Remove" or "Next" is clicked
+      // This allows the winner to remain visible in the roulette until the user decides
       
       // Save winner (but don't increment count yet - only when "Next" is clicked)
       setAllDrawnWinners(prev => [...prev, winner])
@@ -1870,7 +2145,7 @@ export function LuckyDraw() {
       
     } catch (error) {
       console.error("Error running draw:", error)
-      showToast("Failed to run draw", "error")
+      toast.error("Failed to run draw")
     } finally {
       setDrawing(false)
       setIsSpinning(false)
@@ -1889,7 +2164,7 @@ export function LuckyDraw() {
     // Refresh entries from database
     await fetchEntries()
     
-    showToast("All winners drawn successfully!", "success")
+    toast.success("All winners drawn successfully!")
     setAllDrawnWinners([])
   }
 
@@ -1922,9 +2197,10 @@ export function LuckyDraw() {
           setPrizeName("")
           setEditingPrizeId(null)
           await fetchPrizes()
+          toast.success("Prize updated successfully!")
         } else {
           const error = await res.json()
-          alert(`Error: ${error.error}`)
+          toast.error(error.error || "Failed to update prize")
         }
       } else {
         const res = await fetch("/api/prizes", {
@@ -1936,14 +2212,15 @@ export function LuckyDraw() {
         if (res.ok) {
           setPrizeName("")
           await fetchPrizes()
+          toast.success("Prize added successfully!")
         } else {
           const error = await res.json()
-          alert(`Error: ${error.error}`)
+          toast.error(error.error || "Failed to add prize")
         }
       }
     } catch (error) {
       console.error("Error saving prize:", error)
-      alert("Failed to save prize")
+      toast.error("Failed to save prize")
     } finally {
       setPrizeLoading(false)
     }
@@ -1991,13 +2268,13 @@ export function LuckyDraw() {
         }
         
         await fetchPrizes()
-        showToast(`Prize "${pendingDeletePrizeName}" deleted successfully`, "success")
+        toast.success(`Prize "${pendingDeletePrizeName}" deleted successfully`)
       } else {
-        showToast("Failed to delete prize", "error")
+        toast.error("Failed to delete prize")
       }
     } catch (error) {
       console.error("Error deleting prize:", error)
-      showToast("Failed to delete prize", "error")
+      toast.error("Failed to delete prize")
     } finally {
       setShowDeletePrizeConfirmDialog(false)
       setPendingDeletePrizeId(null)
@@ -2020,14 +2297,58 @@ export function LuckyDraw() {
         const data = await res.json()
         await fetchDraws()
         setLastDraw(null)
-        showToast(`Successfully reset all draws. ${data.deletedCount || 0} draw(s) removed.`, "success")
+        
+        // Reset drawing state to first prize with original remaining count
+        // Filter valid prize assignments and sort by prize order (ascending)
+        const validPrizeIds = prizes.length > 0 ? new Set(prizes.map(p => p.id)) : new Set<string>()
+        const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
+        
+        const filteredAssignments = prizeAssignments
+          .filter(a => 
+            a.prizeId && 
+            a.prizeId.trim() !== "" && 
+            a.count > 0 &&
+            (prizes.length === 0 || validPrizeIds.has(a.prizeId))
+          )
+          .sort((a, b) => {
+            const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
+            const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
+            return indexA - indexB // Ascending order
+          })
+        
+        // Reset to first prize (lowest index with count > 0)
+        setIsDrawingInProgress(false)
+        setCurrentPrizeIndex(0)
+        setCurrentPrizeWinnerCount(0)
+        setAllDrawnWinners([])
+        
+        // Set remaining winners and prize name for first prize (already sorted by ascending order)
+        if (filteredAssignments.length > 0) {
+          const firstAssignment = filteredAssignments[0]
+          const firstPrize = prizes.find(p => p.id === firstAssignment.prizeId)
+          if (firstPrize) {
+            setRemainingWinners(firstAssignment.count)
+            setCurrentPrizeName(firstPrize.name)
+          } else {
+            setRemainingWinners(0)
+            setCurrentPrizeName("")
+          }
+        } else {
+          setRemainingWinners(0)
+          setCurrentPrizeName("")
+        }
+        
+        // Refresh entries to restore all entries (since winners were removed)
+        await fetchEntries()
+        
+        toast.success(`Successfully reset all draws. ${data.deletedCount || 0} draw(s) removed.`)
       } else {
         const error = await res.json()
-        showToast(error.error || "Failed to reset draws", "error")
+        toast.error(error.error || "Failed to reset draws")
       }
     } catch (error) {
       console.error("Error resetting draws:", error)
-      showToast("Failed to reset draws", "error")
+      toast.error("Failed to reset draws")
     } finally {
       setResetting(false)
       setShowResetDrawConfirmDialog(false)
@@ -2037,12 +2358,14 @@ export function LuckyDraw() {
   return (
     <div className="[--header-height:calc(--spacing(14))]">
       <div className={`flex flex-col ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={{ backgroundColor: settings?.backgroundColor || undefined }}>
-        <SiteHeader
-          currentView={currentView}
-          onViewChange={setCurrentView}
-          entriesCount={entries.length}
-          prizesCount={prizes.length}
-        />
+        {!isFullscreen && (
+          <SiteHeader
+            currentView={currentView}
+            onViewChange={setCurrentView}
+            entriesCount={entries.length}
+            prizesCount={prizes.length}
+          />
+        )}
         <main className={`flex-1 ${isFullscreen ? 'overflow-hidden flex flex-col' : ''}`}>
           <div className={`w-full ${isFullscreen ? 'max-w-full px-2 sm:px-4 md:px-6 lg:px-8 flex-1 flex flex-col min-h-0' : 'max-w-7xl mx-auto p-4'} ${isFullscreen ? 'py-2' : 'space-y-4'}`}>
         {/* Main View */}
@@ -2051,8 +2374,8 @@ export function LuckyDraw() {
             {/* Glowing background effect */}
             <div className="absolute inset-0 bg-gradient-to-r from-blue-200/20 via-purple-200/20 to-orange-200/20 rounded-2xl blur-3xl -z-10" />
             
-            <div className={`flex flex-col items-center justify-center relative z-10 ${isFullscreen ? 'flex-1 min-h-0' : ''}`}>
-                <div className={`w-full ${isFullscreen ? 'flex flex-col flex-1 min-h-0 justify-between' : ''}`}>
+            <div className={`flex flex-col items-center justify-center relative z-10 ${isFullscreen ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
+                <div className={`w-full ${isFullscreen ? 'flex flex-col flex-1 min-h-0 justify-between overflow-hidden' : ''}`}>
                   {/* Current Prize Display - Automatically shows from draw settings */}
                   {(() => {
                     // Get valid prize assignments
@@ -2061,8 +2384,19 @@ export function LuckyDraw() {
                     // If no prizes are set up, show "PRIZES NOT SETUP YET"
                     if (filteredAssignments.length === 0) {
                       return (
-                        <div className={`${isFullscreen ? 'mb-2 p-2' : 'mb-3 p-3'} bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg`}>
-                          <h3 className={`${isFullscreen ? 'text-2xl md:text-3xl lg:text-4xl' : 'text-lg'} font-black text-white drop-shadow-lg`}>
+                        <div 
+                          className={`${isFullscreen ? 'mb-1' : 'mb-3'} border-2 border-gray-300 rounded-xl text-center shadow-lg`}
+                          style={{
+                            backgroundColor: settings?.prizeTitleBackgroundColor || "#9ca3af",
+                            padding: `${settings?.prizeTitleBackgroundSize || 12}px`
+                          }}
+                        >
+                          <h3 
+                            className="font-black text-white drop-shadow-lg"
+                            style={{
+                              fontSize: `${settings?.prizeTitleFontSize || 48}px`
+                            }}
+                          >
                             PRIZES NOT SETUP YET
                           </h3>
                         </div>
@@ -2084,8 +2418,19 @@ export function LuckyDraw() {
                     // Check if remaining winners is 0
                     if (remainingWinners === 0) {
                       return (
-                        <div className={`${isFullscreen ? 'mb-2 p-2' : 'mb-3 p-3'} bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg`}>
-                          <h3 className={`${isFullscreen ? 'text-3xl md:text-4xl lg:text-5xl xl:text-6xl' : 'text-5xl'} font-black text-white drop-shadow-lg`}>
+                        <div 
+                          className={`${isFullscreen ? 'mb-1' : 'mb-3'} border-2 border-gray-300 rounded-xl text-center shadow-lg`}
+                          style={{
+                            backgroundColor: settings?.prizeTitleBackgroundColor || "#9ca3af",
+                            padding: `${settings?.prizeTitleBackgroundSize || 12}px`
+                          }}
+                        >
+                          <h3 
+                            className="font-black text-white drop-shadow-lg"
+                            style={{
+                              fontSize: `${settings?.prizeTitleFontSize || 48}px`
+                            }}
+                          >
                             WAITING FOR NEXT PRIZE
                           </h3>
                         </div>
@@ -2094,8 +2439,19 @@ export function LuckyDraw() {
                     
                     // Show the current prize being drawn
                     return (
-                      <div className={`${isFullscreen ? 'mb-2 p-2' : 'mb-3 p-3'} bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg`}>
-                        <h3 className={`${isFullscreen ? 'text-3xl md:text-4xl lg:text-5xl xl:text-6xl' : 'text-5xl'} font-black text-white drop-shadow-lg`}>
+                      <div 
+                        className={`${isFullscreen ? 'mb-1' : 'mb-3'} border-2 border-gray-300 rounded-xl text-center shadow-lg`}
+                        style={{
+                          backgroundColor: settings?.prizeTitleBackgroundColor || "#9ca3af",
+                          padding: `${settings?.prizeTitleBackgroundSize || 12}px`
+                        }}
+                      >
+                        <h3 
+                          className="font-black text-white drop-shadow-lg"
+                          style={{
+                            fontSize: `${settings?.prizeTitleFontSize || 48}px`
+                          }}
+                        >
                           PRIZE : {prize.name.toUpperCase()}
                         </h3>
                       </div>
@@ -2103,7 +2459,7 @@ export function LuckyDraw() {
                   })()}
                   
                   {/* Roulette Type Toggle */}
-                  <div className={`flex justify-center ${isFullscreen ? 'mb-2' : 'mb-3'} relative z-50`}>
+                  <div className={`flex justify-center ${isFullscreen ? 'mb-1' : 'mb-3'} relative z-50`}>
                     <div className="inline-flex rounded-lg border p-1 bg-muted">
                       <Button
                         variant={rouletteType === "vertical" ? "default" : "ghost"}
@@ -2128,7 +2484,7 @@ export function LuckyDraw() {
 
                   {/* Vertical Roulette */}
                   {rouletteType === "vertical" && (
-                    <div className={`relative ${isFullscreen ? 'h-[calc(100vh-400px)] min-h-[400px] max-h-[800px]' : 'h-[500px]'} flex items-center justify-center ${isFullscreen ? 'mb-2' : 'mb-4'} px-4`}>
+                    <div className={`relative ${isFullscreen ? 'flex-1 min-h-0 max-h-[calc(100vh-350px)]' : 'h-[500px]'} flex items-center justify-center ${isFullscreen ? 'mb-1' : 'mb-4'} px-4`}>
                       {entries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
@@ -2141,7 +2497,13 @@ export function LuckyDraw() {
                           
                           {/* Winner Highlight Box - Center */}
                           <div className="absolute top-1/2 left-4 right-4 transform -translate-y-1/2 z-30 pointer-events-none">
-                            <div className="border-4 border-yellow-400 rounded-2xl h-20 bg-yellow-50/30" style={{ boxShadow: '0 0 30px rgba(250, 204, 21, 0.4)' }} />
+                            <div 
+                              className="border-4 border-yellow-400 rounded-2xl bg-yellow-50/30" 
+                              style={{ 
+                                boxShadow: '0 0 30px rgba(250, 204, 21, 0.4)',
+                                height: `${settings?.verticalRouletteContainerHeight || 70}px`
+                              }} 
+                            />
                           </div>
                           
                           {/* Scrolling container */}
@@ -2155,7 +2517,7 @@ export function LuckyDraw() {
 
                   {/* Wheel Roulette */}
                   {rouletteType === "wheel" && (
-                    <div className={`relative ${isFullscreen ? 'h-[calc(100vh-400px)] min-h-[400px] max-h-[800px]' : 'h-[550px]'} flex items-center justify-center ${isFullscreen ? 'mb-2' : 'mb-4'}`}>
+                    <div className={`relative ${isFullscreen ? 'flex-1 min-h-0 max-h-[calc(100vh-350px)]' : 'h-[550px]'} flex items-center justify-center ${isFullscreen ? 'mb-1' : 'mb-4'}`}>
                       {entries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
@@ -2163,7 +2525,7 @@ export function LuckyDraw() {
                           <p className="text-sm mt-2">Your lucky winners will appear here!</p>
                         </div>
                       ) : (
-                        <div className={`relative ${isFullscreen ? 'w-[min(550px,calc(100vh-450px))] h-[min(550px,calc(100vh-450px))] min-w-[400px] min-h-[400px] max-w-[800px] max-h-[800px]' : 'w-[550px] h-[550px]'} flex items-center justify-center`}>
+                        <div className={`relative ${isFullscreen ? 'w-[min(500px,calc(100vh-380px))] h-[min(500px,calc(100vh-380px))] min-w-[350px] min-h-[350px] max-w-[700px] max-h-[700px]' : 'w-[550px] h-[550px]'} flex items-center justify-center`}>
                           {/* Winner Indicator - Right Side Arrow (fixed, outside wheel) */}
                           <div className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-5 z-10 pointer-events-none">
                             {/* Arrow pointing left (towards wheel) */}
@@ -2211,8 +2573,8 @@ export function LuckyDraw() {
                   )}
                   
                   {/* Run Draw Button */}
-                  <div className={`flex flex-col items-center ${isFullscreen ? 'gap-2' : 'gap-4'}`}>
-                    <div className={`w-full ${isFullscreen ? 'max-w-md' : 'max-w-xs'} flex flex-col ${isFullscreen ? 'gap-2' : 'gap-3'}`}>
+                  <div className={`flex flex-col items-center ${isFullscreen ? 'gap-1' : 'gap-4'}`}>
+                    <div className={`w-full ${isFullscreen ? 'max-w-md' : 'max-w-xs'} flex flex-col ${isFullscreen ? 'gap-1.5' : 'gap-3'}`}>
                       <Button
                         type="button"
                         onClick={(e) => {
@@ -2230,7 +2592,7 @@ export function LuckyDraw() {
                           (!isDrawingInProgress && (prizeAssignments.length === 0 ||
                           prizeAssignments.filter(a => a.prizeId && a.prizeId.trim() !== "" && a.count > 0).length === 0))
                         }
-                        className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                        className={`w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold ${isFullscreen ? 'py-2 text-sm' : 'py-4 text-base'} disabled:opacity-50 disabled:cursor-not-allowed`}
                         size="lg"
                       >
                         <Trophy className="size-5 mr-2" />
@@ -2253,7 +2615,7 @@ export function LuckyDraw() {
                             : "Configure draw settings to start the draw"}
                         </p>
                       )}
-                      <div className="grid grid-cols-2 gap-3 w-full">
+                      <div className={`grid grid-cols-2 ${isFullscreen ? 'gap-2' : 'gap-3'} w-full`}>
                         <Button
                           onClick={() => {
                             // Initialize temp state with current prizeAssignments when opening modal
@@ -2266,10 +2628,10 @@ export function LuckyDraw() {
                           }}
                           variant="outline"
                           className="w-full"
-                          size="sm"
+                          size={isFullscreen ? "sm" : "sm"}
                         >
-                          <Settings className="size-4 mr-2" />
-                          Draw Settings
+                          <Settings className={`${isFullscreen ? 'size-3' : 'size-4'} mr-2`} />
+                          <span className={isFullscreen ? 'text-xs' : ''}>Draw Settings</span>
                         </Button>
                         
                         {/* Reset Draw Button */}
@@ -2278,10 +2640,10 @@ export function LuckyDraw() {
                           disabled={resetting || draws.length === 0}
                           variant="outline"
                           className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                          size="sm"
+                          size={isFullscreen ? "sm" : "sm"}
                         >
-                          <RotateCcw className="size-4 mr-2" />
-                          {resetting ? "Resetting..." : "Reset Draw"}
+                          <RotateCcw className={`${isFullscreen ? 'size-3' : 'size-4'} mr-2`} />
+                          <span className={isFullscreen ? 'text-xs' : ''}>{resetting ? "Resetting..." : "Reset Draw"}</span>
                         </Button>
                       </div>
                     </div>
@@ -2298,7 +2660,14 @@ export function LuckyDraw() {
 
         {/* Marquee - Full width outside container, only in main view */}
         {currentView === "main" && settings?.marqueeEnabled && settings?.marqueeText && (
-          <div className="w-full overflow-hidden bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 shadow-lg py-3">
+          <div 
+            className={`w-full overflow-hidden border-2 border-gray-300 shadow-lg ${isFullscreen ? 'mt-4' : ''}`}
+            style={{
+              backgroundColor: settings.marqueeBackgroundColor || "#9ca3af",
+              paddingTop: `${settings.marqueeBackgroundSize || 12}px`,
+              paddingBottom: `${settings.marqueeBackgroundSize || 12}px`
+            }}
+          >
             <div className="marquee-container">
               <div 
                 className="marquee-content"
@@ -2306,7 +2675,12 @@ export function LuckyDraw() {
                   animationDuration: `${settings.marqueeSpeed || 30}s`
                 }}
               >
-                <span className="text-white font-black text-lg drop-shadow-lg whitespace-nowrap">
+                <span 
+                  className="text-white font-black drop-shadow-lg whitespace-nowrap"
+                  style={{
+                    fontSize: `${settings.marqueeFontSize || 18}px`
+                  }}
+                >
                   {settings.marqueeText} • {settings.marqueeText} • {settings.marqueeText} • {settings.marqueeText} • {settings.marqueeText} • 
                 </span>
               </div>
@@ -2318,22 +2692,37 @@ export function LuckyDraw() {
         {currentView === "main" && settings?.logos && settings.logos.length > 0 && (
           <div className="w-full px-4 py-4">
             <div className="flex flex-wrap items-center justify-center gap-4">
-              {settings.logos.filter((logo: string) => logo.trim()).map((logo: string, index: number) => (
-                <div key={index} className="flex items-center justify-center">
-                  <Image
-                    src={logo}
-                    alt={`Logo ${index + 1}`}
-                    width={64}
-                    height={64}
-                    className="object-contain"
-                    style={{ maxWidth: '64px', maxHeight: '64px', width: 'auto', height: 'auto' }}
-                    onError={(e) => {
-                      // Hide broken images
-                      (e.target as HTMLImageElement).style.display = 'none'
-                    }}
-                  />
-                </div>
-              ))}
+              {settings.logos
+                .map((logoItem: string | { url: string; size: number; opacity?: number }) => {
+                  // Handle backward compatibility: if logo is a string, convert to object
+                  if (typeof logoItem === 'string') {
+                    return { url: logoItem, size: 64, opacity: 100 }
+                  }
+                  return { ...logoItem, opacity: logoItem.opacity || 100 }
+                })
+                .filter((logo: { url: string; size: number; opacity?: number }) => logo.url && logo.url.trim())
+                .map((logo: { url: string; size: number; opacity?: number }, index: number) => (
+                  <div key={index} className="flex items-center justify-center">
+                    <Image
+                      src={logo.url}
+                      alt={`Logo ${index + 1}`}
+                      width={logo.size}
+                      height={logo.size}
+                      className="object-contain"
+                      style={{ 
+                        maxWidth: `${logo.size}px`, 
+                        maxHeight: `${logo.size}px`, 
+                        width: 'auto', 
+                        height: 'auto',
+                        opacity: `${(logo.opacity || 100) / 100}`
+                      }}
+                      onError={(e) => {
+                        // Hide broken images
+                        (e.target as HTMLImageElement).style.display = 'none'
+                      }}
+                    />
+                  </div>
+                ))}
             </div>
           </div>
         )}
@@ -2351,7 +2740,7 @@ export function LuckyDraw() {
               </div>
             </div>
             
-            {/* Add Single Entry Form */}
+            {/* Add/Edit Single Entry Form */}
             <form 
               onSubmit={async (e) => {
                 e.preventDefault()
@@ -2359,36 +2748,59 @@ export function LuckyDraw() {
                 const name = input?.value.trim()
                 if (!name) return
                 
-                // Check for duplicates
-                const duplicateCheck = checkDuplicates([{ name }])
-                if (duplicateCheck.hasDuplicates) {
-                  if (duplicateCheck.existingDuplicates.includes(name)) {
-                    showToast("This entry already exists", "error")
-                  } else {
-                    showToast("Duplicate entry detected", "error")
+                // Check for duplicates (skip if editing the same entry)
+                if (!editingEntryId || name !== editingEntryName) {
+                  const duplicateCheck = checkDuplicates([{ name }])
+                  if (duplicateCheck.hasDuplicates) {
+                    if (duplicateCheck.existingDuplicates.includes(name)) {
+                      toast.error("This entry already exists")
+                    } else {
+                      toast.error("Duplicate entry detected")
+                    }
+                    return
                   }
-                  return
                 }
                 
                 setLoading(true)
                 try {
-                  const res = await fetch("/api/entries", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name }),
-                  })
-                  
-                  if (res.ok) {
-                    input.value = ""
-                    await fetchEntries()
-                    showToast("Entry added successfully!", "success")
+                  if (editingEntryId) {
+                    // Update existing entry
+                    const res = await fetch(`/api/entries/${editingEntryId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name }),
+                    })
+                    
+                    if (res.ok) {
+                      input.value = ""
+                      setEditingEntryId(null)
+                      setEditingEntryName("")
+                      await fetchEntries()
+                      toast.success("Entry updated successfully!")
+                    } else {
+                      const error = await res.json()
+                      toast.error(error.error || "Failed to update entry")
+                    }
                   } else {
-                    const error = await res.json()
-                    showToast(error.error || "Failed to add entry", "error")
+                    // Create new entry
+                    const res = await fetch("/api/entries", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name }),
+                    })
+                    
+                    if (res.ok) {
+                      input.value = ""
+                      await fetchEntries()
+                      toast.success("Entry added successfully!")
+                    } else {
+                      const error = await res.json()
+                      toast.error(error.error || "Failed to add entry")
+                    }
                   }
                 } catch (error) {
-                  console.error("Error adding entry:", error)
-                  showToast("Failed to add entry", "error")
+                  console.error("Error saving entry:", error)
+                  toast.error(editingEntryId ? "Failed to update entry" : "Failed to add entry")
                 } finally {
                   setLoading(false)
                 }
@@ -2399,6 +2811,8 @@ export function LuckyDraw() {
                 <Input
                   type="text"
                   placeholder="Enter participant name..."
+                  value={editingEntryName}
+                  onChange={(e) => setEditingEntryName(e.target.value)}
                   required
                   className="flex-1 border-blue-500 focus:border-blue-600"
                 />
@@ -2408,9 +2822,31 @@ export function LuckyDraw() {
                   className="bg-blue-500 hover:bg-blue-600 text-white"
                   size="sm"
                 >
-                  <Plus className="size-4 mr-2" />
-                  Add Entry
+                  {editingEntryId ? (
+                    <>
+                      <Edit2 className="size-4 mr-2" />
+                      Update Entry
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="size-4 mr-2" />
+                      Add Entry
+                    </>
+                  )}
                 </Button>
+                {editingEntryId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditingEntryId(null)
+                      setEditingEntryName("")
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                )}
               </div>
             </form>
 
@@ -2433,64 +2869,20 @@ export function LuckyDraw() {
               </p>
             </div>
 
-            <EntriesTable entries={entries} onDelete={handleDeleteEntry} />
+            <EntriesTable 
+              entries={entries} 
+              onDelete={handleDeleteEntry}
+              onEdit={(id, name) => {
+                setEditingEntryId(id)
+                setEditingEntryName(name)
+              }}
+            />
           </section>
         )}
 
         {/* Prizes View */}
         {currentView === "prizes" && (
           <section className="bg-card border rounded-lg p-4">
-            {/* Current Prize Status Banner */}
-            {(() => {
-              // Get valid prize assignments
-              const validPrizeIds = prizes.length > 0 ? new Set(prizes.map(p => p.id)) : new Set<string>()
-              const filteredAssignments = prizeAssignments.filter(a => 
-                a.prizeId && 
-                a.prizeId.trim() !== "" && 
-                a.count > 0 &&
-                (prizes.length === 0 || validPrizeIds.has(a.prizeId))
-              )
-              
-              // If no prizes are set up, show "PRIZES NOT SETUP YET"
-              if (filteredAssignments.length === 0) {
-                return (
-                  <div className="mb-4 p-3 bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg">
-                    <h3 className="text-lg font-black text-white drop-shadow-lg">
-                      PRIZES NOT SETUP YET
-                    </h3>
-                  </div>
-                )
-              }
-              
-              // Check if we're waiting for next prize (remaining winners is 0)
-              if (remainingWinners === 0 && currentPrizeIndex < filteredAssignments.length) {
-                return (
-                  <div className="mb-4 p-3 bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg">
-                    <h3 className="text-5xl font-black text-white drop-shadow-lg">
-                      WAITING FOR NEXT PRIZE
-                    </h3>
-                  </div>
-                )
-              }
-              
-              // Show current prize if there's one active
-              if (currentPrizeIndex < filteredAssignments.length && remainingWinners > 0) {
-                const currentAssignment = filteredAssignments[currentPrizeIndex]
-                const prize = prizes.find(p => p.id === currentAssignment?.prizeId)
-                if (prize) {
-                  return (
-                    <div className="mb-4 p-3 bg-gradient-to-r from-gray-400 to-gray-500 border-2 border-gray-300 rounded-xl text-center shadow-lg">
-                      <h3 className="text-5xl font-black text-white drop-shadow-lg">
-                        PRIZE : {prize.name.toUpperCase()}
-                      </h3>
-                    </div>
-                  )
-                }
-              }
-              
-              return null
-            })()}
-            
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <Gift className="size-5 text-orange-500" />
@@ -2978,7 +3370,54 @@ export function LuckyDraw() {
       </div>
       
       {/* Toast Container */}
-      <ToastContainer />
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
+      
+      {/* Import Progress Modal */}
+      {showImportProgress && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border rounded-lg shadow-lg w-full max-w-md mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+              <h3 className="text-lg font-semibold">Importing Entries</h3>
+            </div>
+            
+            <div className="space-y-2 mb-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Progress</span>
+                <span className="font-semibold">{importProgress.percentage}%</span>
+              </div>
+              
+              {/* Progress Bar */}
+              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 h-full rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${importProgress.percentage}%` }}
+                />
+              </div>
+              
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{importProgress.current} of {importProgress.total} entries</span>
+                <span>{importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0}%</span>
+              </div>
+            </div>
+            
+            <p className="text-sm text-muted-foreground text-center">
+              Please wait while entries are being imported...
+            </p>
+          </div>
+        </div>
+      )}
       
       {/* Confirmation Dialog for Adding Entries */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
@@ -3343,11 +3782,24 @@ export function LuckyDraw() {
                   const assignmentsToSave = tempPrizeAssignments.length > 0 ? tempPrizeAssignments : []
                   
                   // Reorder assignments to match the prize order
-                  const orderedAssignments = tempPrizeOrder.length > 0 && tempPrizeOrder.length === prizes.length
+                  let orderedAssignments = tempPrizeOrder.length > 0 && tempPrizeOrder.length === prizes.length
                     ? tempPrizeOrder
                         .map(prizeId => assignmentsToSave.find(a => a.prizeId === prizeId))
                         .filter((a): a is { prizeId: string; count: number } => a !== undefined)
                     : assignmentsToSave
+                  
+                  // Filter out prizes with 0 winners and sort by prize order (ascending)
+                  // Get prize indices for sorting
+                  const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
+                  
+                  // Filter out assignments with count = 0, then sort by prize order (ascending)
+                  orderedAssignments = orderedAssignments
+                    .filter(a => a.count > 0 && a.prizeId && a.prizeId.trim() !== "")
+                    .sort((a, b) => {
+                      const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
+                      const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
+                      return indexA - indexB // Ascending order
+                    })
                   
                   setPrizeAssignments(orderedAssignments)
                   
@@ -3358,9 +3810,9 @@ export function LuckyDraw() {
                     setTempPrizeAssignments([]) // Clear temp state
                     setTempPrizeOrder([])
                     setDraggedPrizeIndex(null)
-                    showToast("Draw settings saved", "success")
+                    toast.success("Draw settings saved")
                   } catch (error) {
-                    showToast("Failed to save draw settings", "error")
+                    toast.error("Failed to save draw settings")
                   }
                 }}
                 className="bg-green-600 hover:bg-green-700 text-white"
@@ -3512,9 +3964,17 @@ export function LuckyDraw() {
                         })
                         if (res.ok) {
                           // Mark as not present but don't decrease count
+                          // Remove winner from entries list
+                          setEntries(prevEntries => prevEntries.filter(e => e.id !== winner.entry.id))
                           stopModalMusic()
                           setShowWinnerModal(false)
                           setWinnerData(null)
+                          // Reset roulette to starting position
+                          setAnimationOffset(0)
+                          offsetRef.current = 0
+                          lockedPositionRef.current = null
+                          isLockedPositionRef.current = false
+                          disableWrappingRef.current = false
                           await fetchDraws()
                         }
                       } catch (error) {
@@ -3591,9 +4051,17 @@ export function LuckyDraw() {
                             // Fallback: just decrease remainingWinners
                             setRemainingWinners(prev => Math.max(0, prev - 1))
                           }
+                          // Remove winner from entries list
+                          setEntries(prevEntries => prevEntries.filter(e => e.id !== winner.entry.id))
                           stopModalMusic()
                           setShowWinnerModal(false)
                           setWinnerData(null)
+                          // Reset roulette to starting position
+                          setAnimationOffset(0)
+                          offsetRef.current = 0
+                          lockedPositionRef.current = null
+                          isLockedPositionRef.current = false
+                          disableWrappingRef.current = false
                           await fetchDraws()
                           
                           // Ensure we stay on main view (don't navigate to results)

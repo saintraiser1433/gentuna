@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Settings, Palette, Type, Volume2, Music, Plus, X } from "lucide-react"
-import { useToast } from "@/components/ui/toast"
+import { toast } from "react-toastify"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +29,15 @@ interface SettingsData {
   marqueeEnabled?: boolean
   marqueeText?: string
   marqueeSpeed?: number
-  logos?: string[] // Array of logo URLs
+  marqueeBackgroundColor?: string // Custom background color for marquee
+  marqueeFontSize?: number // Custom font size for marquee text
+  marqueeBackgroundSize?: number // Custom padding/height for marquee background
+  prizeTitleBackgroundColor?: string // Custom background color for prize title banner
+  prizeTitleFontSize?: number // Custom font size for prize title text
+  prizeTitleBackgroundSize?: number // Custom padding/height for prize title background
+  verticalRouletteTextSize?: number // Custom font size for vertical roulette entry names
+  verticalRouletteContainerHeight?: number // Custom height for vertical roulette entry containers
+  logos?: Array<{ url: string; size: number; opacity?: number }> // Array of logo objects with URL, size, and opacity
   soundEnabled?: boolean
   drawSound?: string // Draw/roulette sound (data URL or file path), default is ticking sound
   modalMusic?: string
@@ -37,7 +45,7 @@ interface SettingsData {
 }
 
 export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (settings: SettingsData) => void }) {
-  const { showToast, ToastContainer } = useToast()
+  // Toast notifications using react-toastify
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [settings, setSettings] = useState<SettingsData>({
     logo: "",
@@ -51,6 +59,14 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
     marqueeEnabled: false,
     marqueeText: "",
     marqueeSpeed: 30,
+    marqueeBackgroundColor: "#9ca3af", // Default gray-400
+    marqueeFontSize: 18, // Default font size in px
+    marqueeBackgroundSize: 12, // Default padding in px (py-3 = 12px)
+    prizeTitleBackgroundColor: "#9ca3af", // Default gray-400
+    prizeTitleFontSize: 48, // Default font size in px (text-5xl)
+    prizeTitleBackgroundSize: 12, // Default padding in px (p-3 = 12px)
+    verticalRouletteTextSize: 18, // Default font size in px (text-lg)
+    verticalRouletteContainerHeight: 70, // Default container height in px
     logos: [],
     soundEnabled: true,
     modalMusic: "",
@@ -75,8 +91,24 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
         if (parsed.spinTime === undefined) parsed.spinTime = 5
         if (parsed.marqueeEnabled === undefined) parsed.marqueeEnabled = false
         if (parsed.logos === undefined) parsed.logos = []
+        // Convert old string array format to new object format for backward compatibility
+        if (parsed.logos && parsed.logos.length > 0 && typeof parsed.logos[0] === 'string') {
+          parsed.logos = (parsed.logos as string[]).map((logo: string) => ({ url: logo, size: 64, opacity: 100 }))
+        }
+        // Ensure opacity exists for existing logo objects
+        if (parsed.logos && parsed.logos.length > 0 && typeof parsed.logos[0] === 'object' && parsed.logos[0] && !('opacity' in parsed.logos[0])) {
+          parsed.logos = parsed.logos.map((logo: any) => ({ ...logo, opacity: logo.opacity || 100 }))
+        }
         if (parsed.marqueeText === undefined) parsed.marqueeText = ""
         if (parsed.marqueeSpeed === undefined) parsed.marqueeSpeed = 30
+        if (parsed.marqueeBackgroundColor === undefined) parsed.marqueeBackgroundColor = "#9ca3af" // Default gray-400
+        if (parsed.marqueeFontSize === undefined) parsed.marqueeFontSize = 18 // Default font size
+        if (parsed.marqueeBackgroundSize === undefined) parsed.marqueeBackgroundSize = 12 // Default padding
+        if (parsed.prizeTitleBackgroundColor === undefined) parsed.prizeTitleBackgroundColor = "#9ca3af" // Default gray-400
+        if (parsed.prizeTitleFontSize === undefined) parsed.prizeTitleFontSize = 48 // Default font size
+        if (parsed.prizeTitleBackgroundSize === undefined) parsed.prizeTitleBackgroundSize = 12 // Default padding
+        if (parsed.verticalRouletteTextSize === undefined) parsed.verticalRouletteTextSize = 18 // Default font size
+        if (parsed.verticalRouletteContainerHeight === undefined) parsed.verticalRouletteContainerHeight = 70 // Default container height
         if (parsed.soundEnabled === undefined) parsed.soundEnabled = true
         if (parsed.modalMusic === undefined) parsed.modalMusic = ""
         if (parsed.modalMusicVolume === undefined) parsed.modalMusicVolume = 0.5
@@ -98,7 +130,7 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
     // Dispatch custom event to notify other components
     window.dispatchEvent(new Event("settingsUpdated"))
     setShowConfirmDialog(false)
-    showToast("Settings saved successfully!", "success")
+    toast.success("Settings saved successfully!")
   }
 
 
@@ -345,8 +377,309 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
               </div>
               <p className="text-xs text-muted-foreground">Lower values = faster scrolling (5-120 seconds)</p>
             </div>
+
+            {/* Marquee Background Color */}
+            <div className="space-y-2">
+              <Label htmlFor="marqueeBackgroundColor">Marquee Background Color</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="marqueeBackgroundColor"
+                  type="color"
+                  value={settings.marqueeBackgroundColor || "#9ca3af"}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, marqueeBackgroundColor: e.target.value }
+                    setSettings(newSettings)
+                    localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                    onSettingsChange(newSettings)
+                  }}
+                  className="w-20 h-10 cursor-pointer"
+                />
+                <Input
+                  type="text"
+                  value={settings.marqueeBackgroundColor || "#9ca3af"}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, marqueeBackgroundColor: e.target.value }
+                    setSettings(newSettings)
+                    localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                    onSettingsChange(newSettings)
+                  }}
+                  placeholder="#9ca3af"
+                  className="flex-1"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Customize the background color of the marquee banner</p>
+            </div>
+
+            {/* Marquee Font Size */}
+            <div className="space-y-2">
+              <Label htmlFor="marqueeFontSize">Marquee Font Size</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="marqueeFontSize"
+                  type="number"
+                  min="8"
+                  max="72"
+                  value={settings.marqueeFontSize || 18}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, marqueeFontSize: Math.max(8, Math.min(72, parseInt(e.target.value) || 18)) }
+                    setSettings(newSettings)
+                    localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                    onSettingsChange(newSettings)
+                  }}
+                  className="w-24"
+                />
+                <span className="text-sm text-muted-foreground">px (8-72)</span>
+                <div className="flex-1">
+                  <input
+                    type="range"
+                    min="8"
+                    max="72"
+                    step="1"
+                    value={settings.marqueeFontSize || 18}
+                    onChange={(e) => {
+                      const newSettings = { ...settings, marqueeFontSize: parseInt(e.target.value) }
+                      setSettings(newSettings)
+                      localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                      onSettingsChange(newSettings)
+                    }}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Marquee Background Size (Padding) */}
+            <div className="space-y-2">
+              <Label htmlFor="marqueeBackgroundSize">Marquee Background Size (Padding)</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  id="marqueeBackgroundSize"
+                  type="number"
+                  min="4"
+                  max="48"
+                  value={settings.marqueeBackgroundSize || 12}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, marqueeBackgroundSize: Math.max(4, Math.min(48, parseInt(e.target.value) || 12)) }
+                    setSettings(newSettings)
+                    localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                    onSettingsChange(newSettings)
+                  }}
+                  className="w-24"
+                />
+                <span className="text-sm text-muted-foreground">px (4-48)</span>
+                <div className="flex-1">
+                  <input
+                    type="range"
+                    min="4"
+                    max="48"
+                    step="2"
+                    value={settings.marqueeBackgroundSize || 12}
+                    onChange={(e) => {
+                      const newSettings = { ...settings, marqueeBackgroundSize: parseInt(e.target.value) }
+                      setSettings(newSettings)
+                      localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                      onSettingsChange(newSettings)
+                    }}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
           </>
         )}
+      </div>
+
+      {/* Prize Title Banner Settings */}
+      <div className="border-t pt-6 space-y-4">
+        <h3 className="text-lg font-semibold">Prize Title Banner Settings</h3>
+        <div className="space-y-2">
+          <Label htmlFor="prizeTitleBackgroundColor">Prize Title Background Color</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="prizeTitleBackgroundColor"
+              type="color"
+              value={settings.prizeTitleBackgroundColor || "#9ca3af"}
+              onChange={(e) => {
+                const newSettings = { ...settings, prizeTitleBackgroundColor: e.target.value }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-20 h-10 cursor-pointer"
+            />
+            <Input
+              type="text"
+              value={settings.prizeTitleBackgroundColor || "#9ca3af"}
+              onChange={(e) => {
+                const newSettings = { ...settings, prizeTitleBackgroundColor: e.target.value }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              placeholder="#9ca3af"
+              className="flex-1"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">Customize the background color of the prize title banner</p>
+        </div>
+
+        {/* Prize Title Font Size */}
+        <div className="space-y-2">
+          <Label htmlFor="prizeTitleFontSize">Prize Title Font Size</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="prizeTitleFontSize"
+              type="number"
+              min="12"
+              max="120"
+              value={settings.prizeTitleFontSize || 48}
+              onChange={(e) => {
+                const newSettings = { ...settings, prizeTitleFontSize: Math.max(12, Math.min(120, parseInt(e.target.value) || 48)) }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (12-120)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="12"
+                max="120"
+                step="2"
+                value={settings.prizeTitleFontSize || 48}
+                onChange={(e) => {
+                  const newSettings = { ...settings, prizeTitleFontSize: parseInt(e.target.value) }
+                  setSettings(newSettings)
+                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                  onSettingsChange(newSettings)
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Prize Title Background Size (Padding) */}
+        <div className="space-y-2">
+          <Label htmlFor="prizeTitleBackgroundSize">Prize Title Background Size (Padding)</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="prizeTitleBackgroundSize"
+              type="number"
+              min="4"
+              max="48"
+              value={settings.prizeTitleBackgroundSize || 12}
+              onChange={(e) => {
+                const newSettings = { ...settings, prizeTitleBackgroundSize: Math.max(4, Math.min(48, parseInt(e.target.value) || 12)) }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (4-48)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="4"
+                max="48"
+                step="2"
+                value={settings.prizeTitleBackgroundSize || 12}
+                onChange={(e) => {
+                  const newSettings = { ...settings, prizeTitleBackgroundSize: parseInt(e.target.value) }
+                  setSettings(newSettings)
+                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                  onSettingsChange(newSettings)
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Vertical Roulette Settings */}
+      <div className="border-t pt-6 space-y-4">
+        <h3 className="text-lg font-semibold">Vertical Roulette Settings</h3>
+        <p className="text-xs text-muted-foreground">Customize the appearance of the vertical roulette entries (text size and container height)</p>
+        
+        {/* Vertical Roulette Text Size */}
+        <div className="space-y-2">
+          <Label htmlFor="verticalRouletteTextSize">Vertical Roulette Text Size</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="verticalRouletteTextSize"
+              type="number"
+              min="8"
+              max="48"
+              value={settings.verticalRouletteTextSize || 18}
+              onChange={(e) => {
+                const newSettings = { ...settings, verticalRouletteTextSize: Math.max(8, Math.min(48, parseInt(e.target.value) || 18)) }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (8-48)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="8"
+                max="48"
+                step="1"
+                value={settings.verticalRouletteTextSize || 18}
+                onChange={(e) => {
+                  const newSettings = { ...settings, verticalRouletteTextSize: parseInt(e.target.value) }
+                  setSettings(newSettings)
+                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                  onSettingsChange(newSettings)
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Vertical Roulette Container Height */}
+        <div className="space-y-2">
+          <Label htmlFor="verticalRouletteContainerHeight">Vertical Roulette Container Height</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="verticalRouletteContainerHeight"
+              type="number"
+              min="40"
+              max="150"
+              value={settings.verticalRouletteContainerHeight || 70}
+              onChange={(e) => {
+                const newSettings = { ...settings, verticalRouletteContainerHeight: Math.max(40, Math.min(150, parseInt(e.target.value) || 70)) }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (40-150)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="40"
+                max="150"
+                step="5"
+                value={settings.verticalRouletteContainerHeight || 70}
+                onChange={(e) => {
+                  const newSettings = { ...settings, verticalRouletteContainerHeight: parseInt(e.target.value) }
+                  setSettings(newSettings)
+                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                  onSettingsChange(newSettings)
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Logo Settings */}
@@ -355,88 +688,203 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
         
         <div className="space-y-2">
           <Label>Logos (Displayed below marquee)</Label>
-          <p className="text-xs text-muted-foreground">Add multiple logos to display below the marquee. Each logo will be 64px in size.</p>
+          <p className="text-xs text-muted-foreground">Add multiple logos to display below the marquee. Customize the size for each logo.</p>
           
           <div className="space-y-3">
-            {(settings.logos || []).map((logo, index) => (
-              <div key={index} className="space-y-2 p-3 border rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="text"
-                    value={logo}
-                    onChange={(e) => {
-                      const newLogos = [...(settings.logos || [])]
-                      newLogos[index] = e.target.value
-                      const newSettings = { ...settings, logos: newLogos }
-                      setSettings(newSettings)
-                      localStorage.setItem("drawSettings", JSON.stringify(newSettings))
-                      onSettingsChange(newSettings)
-                    }}
-                    placeholder="Enter logo URL or upload file..."
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => {
-                      const newLogos = (settings.logos || []).filter((_, i) => i !== index)
-                      const newSettings = { ...settings, logos: newLogos }
-                      setSettings(newSettings)
-                      localStorage.setItem("drawSettings", JSON.stringify(newSettings))
-                      onSettingsChange(newSettings)
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        const reader = new FileReader()
-                        reader.onload = (event) => {
-                          const dataUrl = event.target?.result as string
+            {(settings.logos || []).map((logoItem, index) => {
+              // Handle backward compatibility: if logo is a string, convert to object
+              const logo = typeof logoItem === 'string' ? { url: logoItem, size: 64, opacity: 100 } : { ...logoItem, opacity: logoItem.opacity || 100 }
+              return (
+                <div key={index} className="space-y-2 p-3 border rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      value={logo.url}
+                      onChange={(e) => {
+                        const newLogos = [...(settings.logos || [])]
+                        // Ensure we're working with object format
+                        const currentLogo = typeof newLogos[index] === 'string' 
+                          ? { url: newLogos[index] as string, size: 64, opacity: 100 }
+                          : { ...(newLogos[index] as { url: string; size: number; opacity?: number }), opacity: (newLogos[index] as any)?.opacity || 100 }
+                        newLogos[index] = { ...currentLogo, url: e.target.value }
+                        const newSettings = { ...settings, logos: newLogos }
+                        setSettings(newSettings)
+                        localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                        onSettingsChange(newSettings)
+                      }}
+                      placeholder="Enter logo URL or upload file..."
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        const newLogos = (settings.logos || []).filter((_, i) => i !== index)
+                        const newSettings = { ...settings, logos: newLogos }
+                        setSettings(newSettings)
+                        localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                        onSettingsChange(newSettings)
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          const reader = new FileReader()
+                          reader.onload = (event) => {
+                            const dataUrl = event.target?.result as string
+                            const newLogos = [...(settings.logos || [])]
+                            // Ensure we're working with object format
+                            const currentLogo = typeof newLogos[index] === 'string' 
+                              ? { url: newLogos[index] as string, size: 64, opacity: 100 }
+                              : { ...(newLogos[index] as { url: string; size: number; opacity?: number }), opacity: (newLogos[index] as any)?.opacity || 100 }
+                            newLogos[index] = { ...currentLogo, url: dataUrl }
+                            const newSettings = { ...settings, logos: newLogos }
+                            setSettings(newSettings)
+                            localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                            onSettingsChange(newSettings)
+                          }
+                          reader.readAsDataURL(file)
+                        }
+                      }}
+                      className="flex-1 text-sm"
+                    />
+                    <span className="text-xs text-muted-foreground">or upload file</span>
+                  </div>
+                  {/* Size Control */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm">Size: {logo.size}px</Label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="range"
+                        min="16"
+                        max="200"
+                        value={logo.size}
+                        onChange={(e) => {
                           const newLogos = [...(settings.logos || [])]
-                          newLogos[index] = dataUrl
+                          // Ensure we're working with object format
+                          const currentLogo = typeof newLogos[index] === 'string' 
+                            ? { url: newLogos[index] as string, size: 64, opacity: 100 }
+                            : { ...(newLogos[index] as { url: string; size: number; opacity?: number }), opacity: (newLogos[index] as any)?.opacity || 100 }
+                          newLogos[index] = { ...currentLogo, size: parseInt(e.target.value) }
                           const newSettings = { ...settings, logos: newLogos }
                           setSettings(newSettings)
                           localStorage.setItem("drawSettings", JSON.stringify(newSettings))
                           onSettingsChange(newSettings)
-                        }
-                        reader.readAsDataURL(file)
-                      }
-                    }}
-                    className="flex-1 text-sm"
-                  />
-                  <span className="text-xs text-muted-foreground">or upload file</span>
-                </div>
-                {/* Logo Preview */}
-                {logo && logo.trim() && (
-                  <div className="flex items-center justify-center p-2 bg-gray-50 rounded border">
-                    <img
-                      src={logo}
-                      alt={`Logo preview ${index + 1}`}
-                      className="max-w-full max-h-32 object-contain"
-                      onError={(e) => {
-                        // Hide broken images
-                        (e.target as HTMLImageElement).style.display = 'none'
-                      }}
-                    />
+                        }}
+                        className="flex-1"
+                      />
+                      <Input
+                        type="number"
+                        min="16"
+                        max="200"
+                        value={logo.size}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value) || 64
+                          const clampedValue = Math.min(200, Math.max(16, value))
+                          const newLogos = [...(settings.logos || [])]
+                          // Ensure we're working with object format
+                          const currentLogo = typeof newLogos[index] === 'string' 
+                            ? { url: newLogos[index] as string, size: 64, opacity: 100 }
+                            : { ...(newLogos[index] as { url: string; size: number; opacity?: number }), opacity: (newLogos[index] as any)?.opacity || 100 }
+                          newLogos[index] = { ...currentLogo, size: clampedValue }
+                          const newSettings = { ...settings, logos: newLogos }
+                          setSettings(newSettings)
+                          localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                          onSettingsChange(newSettings)
+                        }}
+                        className="w-20"
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+                  {/* Opacity Control */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm">Opacity: {logo.opacity || 100}%</Label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={logo.opacity || 100}
+                        onChange={(e) => {
+                          const newLogos = [...(settings.logos || [])]
+                          // Ensure we're working with object format
+                          const currentLogo = typeof newLogos[index] === 'string' 
+                            ? { url: newLogos[index] as string, size: 64, opacity: 100 }
+                            : { ...(newLogos[index] as { url: string; size: number; opacity?: number }), opacity: (newLogos[index] as any)?.opacity || 100 }
+                          newLogos[index] = { ...currentLogo, opacity: parseInt(e.target.value) }
+                          const newSettings = { ...settings, logos: newLogos }
+                          setSettings(newSettings)
+                          localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                          onSettingsChange(newSettings)
+                        }}
+                        className="flex-1"
+                      />
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={logo.opacity || 100}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value) || 100
+                          const clampedValue = Math.min(100, Math.max(0, value))
+                          const newLogos = [...(settings.logos || [])]
+                          // Ensure we're working with object format
+                          const currentLogo = typeof newLogos[index] === 'string' 
+                            ? { url: newLogos[index] as string, size: 64, opacity: 100 }
+                            : { ...(newLogos[index] as { url: string; size: number; opacity?: number }), opacity: (newLogos[index] as any)?.opacity || 100 }
+                          newLogos[index] = { ...currentLogo, opacity: clampedValue }
+                          const newSettings = { ...settings, logos: newLogos }
+                          setSettings(newSettings)
+                          localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                          onSettingsChange(newSettings)
+                        }}
+                        className="w-20"
+                      />
+                    </div>
+                  </div>
+                  {/* Logo Preview */}
+                  {logo.url && logo.url.trim() && (
+                    <div className="flex items-center justify-center p-2 bg-gray-50 rounded border">
+                      <img
+                        src={logo.url}
+                        alt={`Logo preview ${index + 1}`}
+                        className="object-contain"
+                        style={{ 
+                          maxWidth: `${logo.size}px`, 
+                          maxHeight: `${logo.size}px`,
+                          width: 'auto',
+                          height: 'auto',
+                          opacity: `${(logo.opacity || 100) / 100}`
+                        }}
+                        onError={(e) => {
+                          // Hide broken images
+                          (e.target as HTMLImageElement).style.display = 'none'
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
             
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => {
-                const newLogos = [...(settings.logos || []), ""]
+                const newLogos = [...(settings.logos || []), { url: "", size: 64, opacity: 100 }]
                 const newSettings = { ...settings, logos: newLogos }
                 setSettings(newSettings)
                 localStorage.setItem("drawSettings", JSON.stringify(newSettings))
@@ -509,7 +957,7 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
                   // Check file size (limit to 10MB)
                   const maxSize = 10 * 1024 * 1024 // 10MB
                   if (file.size > maxSize) {
-                    showToast(`File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 10MB.`, "error")
+                    toast.error(`File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 10MB.`)
                     return
                   }
                   
@@ -526,7 +974,7 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
                     const data = await response.json()
                     
                     if (!response.ok) {
-                      showToast(data.error || "Failed to upload file", "error")
+                      toast.error(data.error || "Failed to upload file")
                       return
                     }
                     
@@ -535,10 +983,10 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
                     setSettings(newSettings)
                     localStorage.setItem("drawSettings", JSON.stringify(newSettings))
                     onSettingsChange(newSettings)
-                    showToast("Draw sound uploaded successfully!", "success")
+                    toast.success("Draw sound uploaded successfully!")
                   } catch (error: any) {
                     console.error("Error uploading file:", error)
-                    showToast("Failed to upload sound file. Please try again.", "error")
+                    toast.error("Failed to upload sound file. Please try again.")
                   }
                 }
               }}
@@ -682,7 +1130,6 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
       </AlertDialog>
 
       {/* Toast Container */}
-      <ToastContainer />
     </div>
   )
 }
