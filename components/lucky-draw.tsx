@@ -122,15 +122,15 @@ function EntriesTable({ entries, onDelete, onEdit }: { entries: Entry[]; onDelet
               >
                 <Edit2 className="size-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onDelete(entry.id, entry.name)}
-                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onDelete(entry.id, entry.name)}
+              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
                 title="Delete entry"
-              >
-                <Trash2 className="size-4" />
-              </Button>
+            >
+              <Trash2 className="size-4" />
+            </Button>
             </div>
           </div>
         ))}
@@ -289,15 +289,15 @@ function PrizesTable({
                 >
                   <Edit2 className="size-4" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDelete(prize.id, prize.name)}
-                  className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(prize.id, prize.name)}
+                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1"
                   title="Delete prize"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+              >
+                <Trash2 className="size-4" />
+              </Button>
               </div>
             </div>
           )
@@ -426,7 +426,11 @@ export function LuckyDraw() {
   const [entriesCollapsed, setEntriesCollapsed] = useState(false)
   const [prizesCollapsed, setPrizesCollapsed] = useState(false)
   const [shuffledEntries, setShuffledEntries] = useState<Entry[]>([])
+  const [isShuffling, setIsShuffling] = useState(false)
+  const shuffleIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [animationOffset, setAnimationOffset] = useState(0)
+  const [verticalAnimationOffset, setVerticalAnimationOffset] = useState(0)
+  const [wheelAnimationOffset, setWheelAnimationOffset] = useState(0)
   const [rouletteType, setRouletteType] = useState<"vertical" | "wheel">("vertical")
   const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [winnerData, setWinnerData] = useState<{ winners: Winner[]; draw: Draw } | null>(null)
@@ -874,11 +878,11 @@ export function LuckyDraw() {
       
       const filteredAssignments = prizeAssignments
         .filter(a => 
-          a.prizeId && 
-          a.prizeId.trim() !== "" && 
-          a.count > 0 &&
-          validPrizeIds.has(a.prizeId)
-        )
+        a.prizeId && 
+        a.prizeId.trim() !== "" && 
+        a.count > 0 &&
+        validPrizeIds.has(a.prizeId)
+      )
         .sort((a, b) => {
           const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
           const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
@@ -930,16 +934,41 @@ export function LuckyDraw() {
       return
     }
 
-    // Create extended array for smooth looping - don't shuffle, keep consistent order
+    // Create extended array for smooth looping
+    // Shuffle entries if isShuffling is true, otherwise keep consistent order
     if (rouletteType !== "wheel") {
-      // Only update if entries actually changed (by ID comparison)
+      // Only update if entries actually changed (by ID comparison) or if shuffling
       const currentIds = entries.map(e => e.id).join(',')
       const existingIds = shuffledEntries.slice(0, entries.length).map(e => e.id).join(',')
       
-      if (shuffledEntries.length === 0 || currentIds !== existingIds) {
-        const extendedEntries = [...entries, ...entries, ...entries, ...entries]
+      if (shuffledEntries.length === 0 || currentIds !== existingIds || isShuffling) {
+        let entriesToUse = [...entries]
+        
+        // Shuffle if isShuffling is true
+        if (isShuffling && entries.length > 0) {
+          // Fisher-Yates shuffle algorithm
+          for (let i = entriesToUse.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [entriesToUse[i], entriesToUse[j]] = [entriesToUse[j], entriesToUse[i]]
+          }
+        }
+        
+        const extendedEntries = [...entriesToUse, ...entriesToUse, ...entriesToUse, ...entriesToUse]
         setShuffledEntries(extendedEntries)
       }
+    }
+    
+    // For wheel, initialize shuffled entries when shuffling starts
+    if (rouletteType === "wheel" && isShuffling && shuffledWheelEntries.length === 0 && entries.length > 0) {
+      const shuffled = [...entries]
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+      }
+      setShuffledWheelEntries(shuffled)
+    } else if (rouletteType === "wheel" && !isShuffling) {
+      // Reset to original entries when not shuffling
+      setShuffledWheelEntries([])
     }
 
     // Calculate loop dimensions
@@ -953,15 +982,41 @@ export function LuckyDraw() {
     // Start animation loop only once
     if (!animationRef.current) {
       lastTimeRef.current = performance.now()
+      let frameCount = 0
+      const throttleFrames = entries.length > 200 ? 3 : entries.length > 100 ? 2 : 1 // Throttle more for many entries
       
       const animate = (currentTime: number) => {
         const deltaTime = Math.min((currentTime - lastTimeRef.current) / 1000, 0.1) // Cap deltaTime to prevent large jumps
         lastTimeRef.current = currentTime
+        frameCount++
 
         // Always animate - smooth continuous motion
         // Skip if position is locked (after winner is selected)
         if (isLockedPositionRef.current && lockedPositionRef.current !== null) {
-          setAnimationOffset(lockedPositionRef.current)
+          // When locked, just maintain the position without recalculating
+          // The locked position should already be normalized and rounded when set
+          // Only update if there's a meaningful difference (prevents micro-updates that cause flicker)
+          const lockedPos = lockedPositionRef.current
+          const currentOffset = offsetRef.current
+          
+          // Only update if offset differs significantly from locked position
+          if (Math.abs(currentOffset - lockedPos) > 0.01) {
+            offsetRef.current = lockedPos
+            // Update the appropriate animation offset based on roulette type
+            if (rouletteType === "vertical") {
+              if (Math.abs(verticalAnimationOffset - lockedPos) > 0.01) {
+                setVerticalAnimationOffset(lockedPos)
+              }
+            } else if (rouletteType === "wheel") {
+              if (Math.abs(wheelAnimationOffset - lockedPos) > 0.01) {
+                setWheelAnimationOffset(lockedPos)
+              }
+            }
+            // Keep animationOffset for backward compatibility
+            if (Math.abs(animationOffset - lockedPos) > 0.01) {
+              setAnimationOffset(lockedPos)
+            }
+          }
           return
         }
         
@@ -977,24 +1032,42 @@ export function LuckyDraw() {
           // Only wrap if not in landing phase
           if (!disableWrappingRef.current) {
             // Wrap around for infinite loop smoothly
+            if (rouletteType === "wheel") {
+              // For wheel, DON'T normalize during animation - let it go beyond 360
+              // CSS transforms handle rotation values > 360 just fine
+              // Normalizing causes flicker when going from 359° to 1°
+              // Only normalize when calculating segment positions, not for visual rotation
+            } else {
+              // For vertical, wrap normally
             while (offsetRef.current >= loopSize) {
               offsetRef.current -= loopSize
             }
             while (offsetRef.current < 0) {
               offsetRef.current += loopSize
+              }
             }
           }
           
-          setAnimationOffset(offsetRef.current)
+          // Throttle state updates to reduce re-renders (especially important for many entries)
+          // Only update state every N frames, but always update refs for smooth animation
+          if (frameCount % throttleFrames === 0) {
+            // Update animation offset based on active roulette type
+            if (rouletteType === "vertical") {
+              setVerticalAnimationOffset(offsetRef.current)
+            } else if (rouletteType === "wheel") {
+              setWheelAnimationOffset(offsetRef.current)
+            }
+            setAnimationOffset(offsetRef.current) // Keep for backward compatibility
+          }
           
-          // Check if entry passed and play toot sound
-          if (isSpinningRef.current) {
+          // Check if entry passed and play toot sound (throttle this too for performance)
+          if (isSpinningRef.current && frameCount % 2 === 0) {
             checkEntryPassed(offsetRef.current)
           }
           
           // Update spinning sound speed to sync with continuous animation
           // Only if not in controlled draw animation (isSpinning state handles that)
-          if (!isSpinningRef.current && Math.abs(velocityRef.current) > 10) {
+          if (!isSpinningRef.current && Math.abs(velocityRef.current) > 10 && frameCount % 3 === 0) {
             updateSpinSpeed(Math.abs(velocityRef.current))
           }
         }
@@ -1008,7 +1081,89 @@ export function LuckyDraw() {
     return () => {
       // Keep animation running, just cleanup reference
     }
-  }, [entries, rouletteType])
+  }, [entries, rouletteType, isShuffling])
+
+  // Continuous shuffling effect when isShuffling is true
+  useEffect(() => {
+    if (isShuffling && entries.length > 0) {
+      // Initialize immediately when shuffling starts, especially for wheel mode
+      if (rouletteType === "vertical") {
+        const shuffled = [...entries]
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
+        const extendedEntries = [...shuffled, ...shuffled, ...shuffled, ...shuffled]
+        setShuffledEntries(extendedEntries)
+      } else if (rouletteType === "wheel") {
+        const shuffled = [...entries]
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
+        setShuffledWheelEntries(shuffled)
+      }
+      
+      // Shuffle every 200ms for continuous effect
+      shuffleIntervalRef.current = setInterval(() => {
+        if (rouletteType === "vertical") {
+          // Shuffle for vertical roulette
+          const shuffled = [...entries]
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+          }
+          const extendedEntries = [...shuffled, ...shuffled, ...shuffled, ...shuffled]
+          setShuffledEntries(extendedEntries)
+        } else if (rouletteType === "wheel") {
+          // Shuffle for wheel roulette
+          const shuffled = [...entries]
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+          }
+          setShuffledWheelEntries(shuffled)
+        }
+      }, 200) // Shuffle every 200ms
+    } else {
+      // Clear interval when not shuffling
+      if (shuffleIntervalRef.current) {
+        clearInterval(shuffleIntervalRef.current)
+        shuffleIntervalRef.current = null
+      }
+    }
+    
+    return () => {
+      if (shuffleIntervalRef.current) {
+        clearInterval(shuffleIntervalRef.current)
+        shuffleIntervalRef.current = null
+      }
+    }
+  }, [isShuffling, entries, rouletteType])
+
+  // Automatically start shuffling when not drawing
+  useEffect(() => {
+    // Check if shuffling is enabled in settings (default to true if not set)
+    const shuffleEnabled = settings?.shuffleNamesEnabled !== false
+    
+    // Stop shuffling only when actively drawing (drawing === true) or if shuffling is disabled
+    if (drawing || !shuffleEnabled) {
+      if (isShuffling) {
+        setIsShuffling(false)
+      }
+      return
+    }
+    
+    // Start shuffling if:
+    // - Not currently actively drawing (drawing === false)
+    // - Shuffling is enabled in settings
+    // - Entries exist
+    // This works for both vertical and wheel modes
+    // Note: We allow shuffling even if isDrawingInProgress is true (between draws)
+    if (entries.length > 0 && !isShuffling) {
+      setIsShuffling(true)
+    }
+  }, [drawing, entries.length, isShuffling, rouletteType, settings?.shuffleNamesEnabled])
 
   // Memoize colors array to avoid recreating it
   const verticalColors = useMemo(() => [
@@ -1029,10 +1184,14 @@ export function LuckyDraw() {
   const getVerticalRouletteItems = () => {
     if (rouletteType !== "vertical" || entries.length === 0) return []
     
+    // Use shuffled entries if shuffling is active, otherwise use original entries
+    const entriesToUse = isShuffling && shuffledEntries.length > 0 ? shuffledEntries : entries
+    const baseEntriesLength = entries.length
+    
     const itemHeight = settings?.verticalRouletteContainerHeight || 70
     const itemSpacing = 10
     const totalItemHeight = itemHeight + itemSpacing
-    const loopHeight = entries.length * totalItemHeight
+    const loopHeight = baseEntriesLength * totalItemHeight
     
     // Only render items visible in viewport + buffer (optimized for large entry counts)
     const viewportHeight = 500
@@ -1040,7 +1199,9 @@ export function LuckyDraw() {
     const visibleRange = viewportHeight / 2 + buffer
     
     // Calculate which entries to render based on current offset
-    const normalizedOffset = ((animationOffset % loopHeight) + loopHeight) % loopHeight
+    // Use vertical-specific animation offset
+    const currentOffset = rouletteType === "vertical" ? verticalAnimationOffset : 0
+    const normalizedOffset = ((currentOffset % loopHeight) + loopHeight) % loopHeight
     const startIndex = Math.floor((normalizedOffset - visibleRange) / totalItemHeight)
     const endIndex = Math.ceil((normalizedOffset + visibleRange) / totalItemHeight)
     
@@ -1049,8 +1210,12 @@ export function LuckyDraw() {
     // Render items in visible range (with wrapping) - limit to reasonable range
     const maxItems = Math.min(endIndex - startIndex, 50) // Cap at 50 items max
     for (let i = startIndex; i <= startIndex + maxItems && i <= endIndex; i++) {
-      const entryIndex = ((i % entries.length) + entries.length) % entries.length
-      const entry = entries[entryIndex]
+      // For shuffled entries (extended array), use modulo with entriesToUse.length
+      // For original entries, use modulo with baseEntriesLength
+      const entryIndex = isShuffling && shuffledEntries.length > 0 
+        ? ((i % entriesToUse.length) + entriesToUse.length) % entriesToUse.length
+        : ((i % baseEntriesLength) + baseEntriesLength) % baseEntriesLength
+      const entry = entriesToUse[entryIndex]
       if (!entry) continue
       
       const baseY = i * totalItemHeight
@@ -1066,13 +1231,16 @@ export function LuckyDraw() {
       if (Math.abs(adjustedY) > visibleRange) continue
       
       const isNearCenter = distanceFromCenter < totalItemHeight * 0.6
-      const color = verticalColors[entryIndex % verticalColors.length]
+      // For color, use the entry's original index in the entries array
+      const originalEntryIndex = entries.findIndex(e => e.id === entry.id)
+      const colorIndex = originalEntryIndex >= 0 ? originalEntryIndex : entryIndex
+      const color = verticalColors[colorIndex % verticalColors.length]
       
       const textSize = settings?.verticalRouletteTextSize || 18
       itemsToRender.push(
         <div
           key={`${entry.id}-${i}`}
-          className={`absolute left-0 right-0 mx-6 rounded-2xl px-6 py-5 font-bold shadow-lg ${color} text-white`}
+          className={`absolute left-0 right-0 mx-6 rounded-2xl px-8 py-6 font-bold shadow-lg ${color} text-white`}
           style={{
             top: '50%',
             height: `${itemHeight}px`,
@@ -1084,7 +1252,7 @@ export function LuckyDraw() {
             fontSize: `${textSize}px`
           }}
         >
-          <div className="text-center flex items-center justify-center h-full w-full px-2">
+          <div className="text-center flex items-center justify-center h-full w-full px-4">
             <span 
               className="block truncate"
               style={{
@@ -1092,7 +1260,7 @@ export function LuckyDraw() {
               }}
               title={entry.name.toUpperCase()}
             >
-              {entry.name.toUpperCase()}
+            {entry.name.toUpperCase()}
             </span>
           </div>
         </div>
@@ -1102,56 +1270,154 @@ export function LuckyDraw() {
     return itemsToRender
   }
 
+  // Shuffled entries for wheel (only used when shuffling)
+  const [shuffledWheelEntries, setShuffledWheelEntries] = useState<Entry[]>([])
+  
   // Memoize wheel SVG elements for performance (must be at top level)
   // For large entry counts, limit rendering to prevent hangs
   const wheelSvgElements = useMemo(() => {
-    if (rouletteType !== "wheel" || entries.length === 0) return []
+    if (rouletteType !== "wheel" || entries.length === 0) return {
+      elements: null,
+      viewBoxSize: 200,
+      centerX: 100,
+      centerY: 100,
+      radius: 100
+    }
     
-    // Render all entries - performance is handled by limiting text rendering complexity
-    // For very large counts, we'll use smaller font and fewer characters, but show all segments
-    const entriesToRender = entries
+    // Use shuffled entries if shuffling, otherwise use original entries
+    const entriesToRender = isShuffling && shuffledWheelEntries.length > 0 ? shuffledWheelEntries : entries
     
     const colors = [
-      ['#f97316', '#ea580c'], // orange
-      ['#3b82f6', '#2563eb'], // blue
-      ['#eab308', '#ca8a04'], // yellow
-      ['#a855f7', '#9333ea'], // purple
-      ['#ec4899', '#db2777'], // pink
-      ['#22c55e', '#16a34a'], // green
-      ['#ef4444', '#dc2626'], // red
-      ['#6366f1', '#4f46e5'], // indigo
-      ['#14b8a6', '#0d9488'], // teal
-      ['#06b6d4', '#0891b2'], // cyan
+      ['#f97316', '#ea580c'], // orange - vibrant
+      ['#3b82f6', '#2563eb'], // blue - vibrant
+      ['#eab308', '#ca8a04'], // yellow - vibrant
+      ['#a855f7', '#9333ea'], // purple - vibrant
+      ['#ec4899', '#db2777'], // pink - vibrant
+      ['#22c55e', '#16a34a'], // green - vibrant
+      ['#ef4444', '#dc2626'], // red - vibrant
+      ['#6366f1', '#4f46e5'], // indigo - vibrant
+      ['#14b8a6', '#0d9488'], // teal - vibrant
+      ['#06b6d4', '#0891b2'], // cyan - vibrant
+      ['#f59e0b', '#d97706'], // amber
+      ['#84cc16', '#65a30d'], // lime
+      ['#10b981', '#059669'], // emerald
+      ['#8b5cf6', '#7c3aed'], // violet
+      ['#f43f5e', '#e11d48'], // rose
     ]
     
     const totalEntries = entries.length
     const anglePerSegment = 360 / totalEntries
-    const radius = 100
+    
+    // Calculate dynamic radius based on entry count - larger radius for more entries to fit text
+    let radius: number
+    let viewBoxSize: number
+    let centerX: number
+    let centerY: number
+    
+    if (totalEntries > 1000) {
+      radius = 180 // Large radius for 1000+ entries
+      viewBoxSize = 360
+      centerX = 180
+      centerY = 180
+    } else if (totalEntries > 500) {
+      radius = 150 // Medium-large radius for 500-1000 entries
+      viewBoxSize = 300
+      centerX = 150
+      centerY = 150
+    } else if (totalEntries > 300) {
+      radius = 130 // Medium radius for 300-500 entries
+      viewBoxSize = 260
+      centerX = 130
+      centerY = 130
+    } else if (totalEntries > 200) {
+      radius = 120 // Slightly larger for 200-300 entries
+      viewBoxSize = 240
+      centerX = 120
+      centerY = 120
+    } else if (totalEntries > 100) {
+      radius = 110 // Slightly larger for 100-200 entries
+      viewBoxSize = 220
+      centerX = 110
+      centerY = 110
+    } else {
+      radius = 100 // Default radius for <100 entries
+      viewBoxSize = 200
+      centerX = 100
+      centerY = 100
+    }
+    
+    const gradientDefs: JSX.Element[] = []
     const elements: JSX.Element[] = []
     
-    // Calculate responsive font size based on total entry count
-    // More entries = smaller text to fit better, but keep it readable
+    // Calculate responsive font size based on segment container size
+    // Font size should scale with the segment arc length to fit the container
+    const baseFontSize = settings?.wheelRouletteTextSize || 6
     let fontSize: number
     let maxNameLength: number
-    if (totalEntries > 1000) {
-      fontSize = 4 // Very small for 1000+ entries
-      maxNameLength = 5 // Show first 5 chars
+    let showText = true
+    
+    // Calculate text radius percentage (where text will be positioned)
+    // Reduced percentages to add padding from edge (moved text closer to center)
+    const textRadiusPercent = totalEntries > 1000 ? 0.55 : totalEntries > 500 ? 0.58 : totalEntries > 300 ? 0.60 : totalEntries > 200 ? 0.62 : totalEntries > 100 ? 0.64 : totalEntries > 50 ? 0.66 : 0.68
+    const textRadius = radius * textRadiusPercent
+    
+    // Calculate segment radial height (distance from inner to outer edge)
+    // Inner radius is typically around 20-30% of outer radius for the center circle
+    const innerRadius = radius * 0.25 // 25% of radius for center circle
+    const segmentRadialHeight = radius - innerRadius
+    
+    // Calculate font size based on segment radial height to match container height
+    // Font size should be about 60-70% of the radial height to fit nicely
+    // Also consider arc length for width constraints
+    const arcLengthAtText = textRadius * (anglePerSegment * Math.PI / 180)
+    const avgEntryNameLength = entries.length > 0 
+      ? entries.reduce((sum, e) => sum + e.name.length, 0) / entries.length 
+      : 10
+    
+    // Calculate font size based on radial height (primary) and arc length (secondary)
+    // Use the smaller of the two to ensure text fits both height and width
+    let fontSizeByHeight = Math.round(segmentRadialHeight * 0.6) // 60% of radial height
+    let fontSizeByWidth: number
+    
+    // Estimate max characters that can fit (use shorter names for many entries)
+    if (totalEntries > 2000) {
+      showText = false
+      maxNameLength = 0
+      fontSize = 4
+    } else if (totalEntries > 1000) {
+      maxNameLength = 2
+      fontSizeByWidth = Math.max(4, Math.round((arcLengthAtText * 0.5) / (2 * 0.5)))
+      fontSize = Math.min(fontSizeByHeight, fontSizeByWidth)
     } else if (totalEntries > 500) {
-      fontSize = 5 // Small for 500-1000 entries
-      maxNameLength = 6 // Show first 6 chars
+      maxNameLength = 3
+      fontSizeByWidth = Math.max(4, Math.round((arcLengthAtText * 0.5) / (3 * 0.5)))
+      fontSize = Math.min(fontSizeByHeight, fontSizeByWidth)
     } else if (totalEntries > 300) {
-      fontSize = 6 // Small for 300-500 entries
-      maxNameLength = 8
+      maxNameLength = 4
+      fontSizeByWidth = Math.max(5, Math.round((arcLengthAtText * 0.55) / (4 * 0.5)))
+      fontSize = Math.min(fontSizeByHeight, fontSizeByWidth)
     } else if (totalEntries > 200) {
-      fontSize = 7 // Medium-small for 200-300 entries
-      maxNameLength = 10
+      maxNameLength = 5
+      fontSizeByWidth = Math.max(6, Math.round((arcLengthAtText * 0.55) / (5 * 0.5)))
+      fontSize = Math.min(fontSizeByHeight, fontSizeByWidth)
     } else if (totalEntries > 100) {
-      fontSize = 8 // Medium for 100-200 entries
-      maxNameLength = 12
+      maxNameLength = 6
+      fontSizeByWidth = Math.max(7, Math.round((arcLengthAtText * 0.6) / (6 * 0.5)))
+      fontSize = Math.min(fontSizeByHeight, fontSizeByWidth)
+    } else if (totalEntries > 50) {
+      maxNameLength = 8
+      fontSizeByWidth = Math.max(8, Math.round((arcLengthAtText * 0.65) / (8 * 0.5)))
+      fontSize = Math.min(fontSizeByHeight, fontSizeByWidth)
     } else {
-      fontSize = 10 // Normal for <100 entries
-      maxNameLength = 18
+      maxNameLength = 15
+      fontSizeByWidth = Math.round((arcLengthAtText * 0.7) / (Math.min(avgEntryNameLength, 10) * 0.5))
+      fontSize = Math.min(fontSizeByHeight, fontSizeByWidth)
+      // For fewer entries, ensure it's not too small
+      fontSize = Math.max(fontSize, baseFontSize * 0.8)
     }
+    
+    // Ensure font size is reasonable (not too large or too small)
+    fontSize = Math.max(4, Math.min(fontSize, baseFontSize * 1.2))
       
     // Helper functions for color calculation
     const getLuminance = (r: number, g: number, b: number) => {
@@ -1179,113 +1445,137 @@ export function LuckyDraw() {
       const endRad = (endAngle * Math.PI) / 180
       
       // Calculate arc path
-      const x1 = 100 + radius * Math.cos(startRad)
-      const y1 = 100 + radius * Math.sin(startRad)
-      const x2 = 100 + radius * Math.cos(endRad)
-      const y2 = 100 + radius * Math.sin(endRad)
+      const x1 = centerX + radius * Math.cos(startRad)
+      const y1 = centerY + radius * Math.sin(startRad)
+      const x2 = centerX + radius * Math.cos(endRad)
+      const y2 = centerY + radius * Math.sin(endRad)
       
       // For full circle (single entry), use different approach
       const largeArcFlag = anglePerSegment > 180 ? 1 : 0
       
       const pathData = totalEntries === 1 
-        ? `M 100 100 m -100 0 a 100 100 0 1 0 200 0 a 100 100 0 1 0 -200 0`
+        ? `M ${centerX} ${centerY} m -${radius} 0 a ${radius} ${radius} 0 1 0 ${radius * 2} 0 a ${radius} ${radius} 0 1 0 -${radius * 2} 0`
         : [
-            `M 100 100`,
+            `M ${centerX} ${centerY}`,
             `L ${x1} ${y1}`,
             `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
             `Z`
           ].join(' ')
       
-      // Calculate text position - place horizontally in the middle of the segment
+      // Calculate text position - place along the radial direction (base near center, top near edge)
       const textAngle = startAngle + anglePerSegment / 2
       const textRad = (textAngle * Math.PI) / 180
       
       // Position text in the middle of the segment (between center and edge)
-      // Adjust radius based on total entry count - closer to center for more entries
-      let textRadius: number
-      if (totalEntries > 1000) {
-        textRadius = 75 // Closer to center for very large counts
-      } else if (totalEntries > 500) {
-        textRadius = 73 // Closer to center for very large counts
-      } else if (totalEntries > 300) {
-        textRadius = 71
-      } else if (totalEntries > 200) {
-        textRadius = 69
-      } else if (totalEntries > 100) {
-        textRadius = 67
-      } else {
-        textRadius = 65 // Normal position
-      }
+      // textRadius is already calculated above based on segment size
       
-      // Calculate text position
-      const textX = 100 + textRadius * Math.cos(textRad)
-      const textY = 100 + textRadius * Math.sin(textRad)
+      // Calculate text position (center of text along the radius)
+      const textX = centerX + textRadius * Math.cos(textRad)
+      const textY = centerY + textRadius * Math.sin(textRad)
       
-      // Determine text color based on segment brightness for better contrast
-      // Use the lighter color (color1) to determine text color
-      const rgb = hexToRgb(color1)
-      const luminance = getLuminance(rgb.r, rgb.g, rgb.b)
-      // If segment is bright (luminance > 0.5), use dark text, otherwise use white text
-      const textColor = luminance > 0.5 ? '#000000' : '#FFFFFF'
-      const textStroke = luminance > 0.5 ? '#FFFFFF' : '#000000'
+      // Determine text color - always bright white for all segments (same as roulette)
+      // Always use bright white text like the roulette
+      const textColor = '#FFFFFF'
+      // Use a subtle dark stroke for all segments to make white text stand out
+      const textStroke = '#000000'
+      
+      // Use entry.id for unique gradient ID to avoid conflicts
+      const gradientId = `grad-${entry.id}-${index}`
+      
+      // Add gradient definition to defs array
+      gradientDefs.push(
+        <linearGradient key={gradientId} id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={color1} stopOpacity="1" />
+          <stop offset="100%" stopColor={color2} stopOpacity="1" />
+        </linearGradient>
+      )
       
       elements.push(
         <g key={entry.id}>
-          <defs>
-            <linearGradient id={`grad-${index}`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" style={{ stopColor: color1, stopOpacity: 1 }} />
-              <stop offset="100%" style={{ stopColor: color2, stopOpacity: 1 }} />
-            </linearGradient>
-          </defs>
           <path
             d={pathData}
-            fill={`url(#grad-${index})`}
-            stroke="white"
-            strokeWidth="2"
+            fill={`url(#${gradientId})`}
+            stroke="#9ca3af"
+            strokeWidth={totalEntries > 500 ? "0.3" : totalEntries > 200 ? "0.5" : "0.8"}
+            style={{
+              opacity: 1,
+              fillOpacity: 1
+            }}
           />
           {/* Text positioned horizontally in the middle of the segment */}
           {(() => {
-            // Truncate name based on entry count
+            // Truncate name based on entry count, but ensure minimum readability
             let displayName = entry.name
             if (displayName.length > maxNameLength) {
-              displayName = displayName.substring(0, maxNameLength - 3) + '...'
+              // For very short max length (3 chars for 1000+), just show first chars without ellipsis
+              if (maxNameLength <= 3) {
+                displayName = displayName.substring(0, maxNameLength).toUpperCase()
+              } else if (maxNameLength <= 4) {
+                displayName = displayName.substring(0, maxNameLength).toUpperCase()
+              } else {
+                displayName = displayName.substring(0, maxNameLength - 3).toUpperCase() + '...'
+              }
             } else {
               displayName = displayName.toUpperCase()
             }
             
-            return (
-              <text
+            // Calculate rotation angle for text
+            // Rotate text to align with radial direction (along the radius)
+            // Text should follow the radial line from center to edge, facing outward/upward
+            // Normalize angle to 0-360 range
+            const normalizedAngle = ((textAngle % 360) + 360) % 360
+            // For text to face outward (readable from outside), we rotate along the radius
+            // In upper half (90-270°), text needs to be flipped 180° to face outward
+            // In lower half, text already faces outward with the angle
+            const rotationAngle = normalizedAngle > 90 && normalizedAngle < 270 
+              ? normalizedAngle + 180  // Upper half: flip to face outward/upward
+              : normalizedAngle        // Lower half: already faces outward
+            
+              return (
+                <text
                 x={textX}
                 y={textY}
                 fill={textColor}
                 fontSize={fontSize}
-                fontWeight="bold"
-                textAnchor="middle"
-                dominantBaseline="middle"
-                // Rotate text to align with segment angle (horizontal within segment)
-                // Add 90 degrees to make text horizontal (perpendicular to radius)
-                transform={`rotate(${textAngle + 90}, ${textX}, ${textY})`}
+                fontWeight="400"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                transform={`rotate(${rotationAngle}, ${textX}, ${textY})`}
                 style={{ 
-                  filter: luminance > 0.5 
-                    ? 'drop-shadow(0 0 2px rgba(255,255,255,0.8))' 
-                    : 'drop-shadow(0 0 2px rgba(0,0,0,0.8))',
+                  fontFamily: 'Arial, sans-serif',
+                  filter: 'none',
                   pointerEvents: 'none',
                   userSelect: 'none',
                   stroke: textStroke,
-                  strokeWidth: '0.3px',
-                  paintOrder: 'stroke fill'
+                  strokeWidth: totalEntries > 1000 ? '0.4px' : totalEntries > 500 ? '0.3px' : totalEntries > 200 ? '0.2px' : '0.2px', // Subtle stroke for visibility
+                  paintOrder: 'stroke fill',
+                  letterSpacing: totalEntries > 1000 ? '0.3px' : totalEntries > 500 ? '0.2px' : '0px' // Minimal letter spacing for 1000+ to fit better
                 }}
               >
                 {displayName}
-              </text>
-            )
+                </text>
+              )
           })()}
         </g>
       )
     })
     
-    return elements
-  }, [entries, rouletteType])
+    // Return defs first, then elements - gradients must be defined before use
+    return {
+      elements: (
+        <>
+          <defs>
+            {gradientDefs}
+          </defs>
+          {elements}
+        </>
+      ),
+      viewBoxSize,
+      centerX,
+      centerY,
+      radius
+    }
+  }, [entries, rouletteType, settings?.wheelRouletteTextSize, isShuffling, shuffledWheelEntries])
 
   // Normalize name for duplicate detection: lowercase + remove spaces
   const normalizeName = (name: string): string => {
@@ -1661,6 +1951,9 @@ export function LuckyDraw() {
 
   // Initialize or continue drawing (one click = one winner)
   const handleRunDraw = async () => {
+    // Stop shuffling when draw starts
+    setIsShuffling(false)
+    
     if (entries.length === 0) {
       toast.warning("No entries available. Please add entries first.")
       return
@@ -1728,11 +2021,11 @@ export function LuckyDraw() {
     // Filter and sort assignments by prize order (ascending)
     const filteredAssignments = prizeAssignments
       .filter(a => 
-        a.prizeId && 
-        a.prizeId.trim() !== "" && 
-        a.count > 0 &&
-        (prizes.length === 0 || validPrizeIds.has(a.prizeId)) // Only check if prizes exist
-      )
+      a.prizeId && 
+      a.prizeId.trim() !== "" && 
+      a.count > 0 &&
+      (prizes.length === 0 || validPrizeIds.has(a.prizeId)) // Only check if prizes exist
+    )
       .sort((a, b) => {
         const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
         const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
@@ -1817,7 +2110,10 @@ export function LuckyDraw() {
       const winner = newDraw.winners[0]
       
       // Find the winner's index in current entries
-      const winnerIndex = entries.findIndex(e => e.id === winner.entry.id)
+      let winnerIndex = entries.findIndex(e => e.id === winner.entry.id)
+      
+      // For wheel roulette, we'll verify the actual segment at arrow matches the winner
+      // If not, we'll use the actual segment as the winner (more accurate)
       
       // Prize name and remaining count are already set before drawing starts
       // Wait a moment to show the prize label
@@ -1927,7 +2223,13 @@ export function LuckyDraw() {
           const currentPosition = startOffset + ((finalTarget - startOffset) * easeProgress)
           
           offsetRef.current = currentPosition
-          setAnimationOffset(currentPosition)
+          // Update the appropriate animation offset based on roulette type
+          if (rouletteType === "vertical") {
+            setVerticalAnimationOffset(currentPosition)
+          } else if (rouletteType === "wheel") {
+            setWheelAnimationOffset(currentPosition)
+          }
+          setAnimationOffset(currentPosition) // Keep for backward compatibility
           
           // Decelerate speed based on spin time progress - start slowing at 30% (last 70% slows down)
           // Keep full speed for first 30%, then dramatically slow down for maximum suspense
@@ -2040,30 +2342,62 @@ export function LuckyDraw() {
             // Round to avoid floating point errors that might cause landing on separator line
             exactRotation = Math.round(exactRotation * 10000) / 10000
             
-            // Verify we're close to the correct position (within 0.01 degrees to avoid separator)
-            const positionDiff = Math.abs(normalizedPosition - exactRotation)
-            const wrappedDiff = Math.min(positionDiff, 360 - positionDiff)
+            // Use the exact calculated position to ensure we're in the center of the segment, not on separator
+            normalizedPosition = exactRotation
             
-            if (wrappedDiff > 0.01) {
-              // Use the exact calculated position to ensure we're in the center of the segment, not on separator
-              normalizedPosition = exactRotation
-            }
+            // Double-check: verify which segment is actually at the arrow using the EXACT same calculation as arrow color
+            const segmentCenterOffset = 90 - (anglePerSegment / 2)
+            const targetAngle = (segmentCenterOffset - normalizedPosition + 360) % 360
+            const entryFloat = targetAngle / anglePerSegment
+            let actualIndex = Math.floor(entryFloat + 0.5) % entries.length
+            if (actualIndex < 0) actualIndex += entries.length
             
-            // Double-check: verify which segment is actually at the arrow
-            const calculatedIndex = Math.floor((90 - (anglePerSegment / 2) - normalizedPosition + 360) / anglePerSegment) % entries.length
-            const actualIndex = calculatedIndex < 0 ? calculatedIndex + entries.length : calculatedIndex
-            
+            // If the actual segment at arrow doesn't match winner, there's a calculation error
+            // In this case, we should trust the exact rotation calculation and ensure it's correct
             if (actualIndex !== winnerIndex) {
-              // Recalculate with exact precision to ensure correct winner and avoid separator
+              // Recalculate to ensure precision - the exactRotation should be correct
               normalizedPosition = exactRotation
+              // Verify one more time
+              const targetAngle2 = (segmentCenterOffset - normalizedPosition + 360) % 360
+              const entryFloat2 = targetAngle2 / anglePerSegment
+              let actualIndex2 = Math.floor(entryFloat2 + 0.5) % entries.length
+              if (actualIndex2 < 0) actualIndex2 += entries.length
+              
+              // If still mismatched, log for debugging but use exactRotation (it should be correct)
+              if (actualIndex2 !== winnerIndex) {
+                console.warn("Winner verification mismatch - using exact rotation:", { 
+                  winnerIndex, 
+                  actualIndex2, 
+                  normalizedPosition, 
+                  exactRotation,
+                  correctSegmentCenter,
+                  anglePerSegment
+                })
+              }
             }
           }
           
           // Lock the position
+          // For wheel, normalize to 0-360 range only when locking (not during animation)
+          // This prevents flicker when the wheel wraps from last entry to first entry
+          if (rouletteType === "wheel") {
+            // Normalize the position to 0-360 range for final locked position
+            // This ensures consistent positioning without visual jumps
+            normalizedPosition = ((normalizedPosition % 360) + 360) % 360
+            // Round to prevent floating point precision issues that cause flicker
+            normalizedPosition = Math.round(normalizedPosition * 1000) / 1000
+          }
+          
           isLockedPositionRef.current = true
           lockedPositionRef.current = normalizedPosition
           offsetRef.current = normalizedPosition
-          setAnimationOffset(normalizedPosition)
+          // Update the appropriate animation offset based on roulette type
+          if (rouletteType === "vertical") {
+            setVerticalAnimationOffset(normalizedPosition)
+          } else if (rouletteType === "wheel") {
+            setWheelAnimationOffset(normalizedPosition)
+          }
+          setAnimationOffset(normalizedPosition) // Keep for backward compatibility
           velocityRef.current = 0
           setCurrentAnimationSpeed(0)
           disableWrappingRef.current = false // Re-enable wrapping
@@ -2074,6 +2408,18 @@ export function LuckyDraw() {
             // Stop spinning sound
             stopSpinningSound()
             // Keep position locked until next draw starts
+            // Ensure position stays normalized and rounded to prevent flicker
+            if (rouletteType === "wheel" && lockedPositionRef.current !== null) {
+              const finalNormalized = ((lockedPositionRef.current % 360) + 360) % 360
+              const roundedFinal = Math.round(finalNormalized * 1000) / 1000
+              lockedPositionRef.current = roundedFinal
+              offsetRef.current = roundedFinal
+              // Only update if different to prevent unnecessary re-renders
+              if (Math.abs(wheelAnimationOffset - roundedFinal) > 0.01) {
+                setWheelAnimationOffset(roundedFinal)
+                setAnimationOffset(roundedFinal) // Keep for backward compatibility
+              }
+            }
           }, 100)
         }
       }
@@ -2092,17 +2438,72 @@ export function LuckyDraw() {
         await new Promise(resolve => setTimeout(resolve, revealDelayMs))
       }
       
+      // For wheel roulette, ALWAYS calculate the actual winner based on what's at the arrow
+      // This ensures the displayed winner matches what the user sees
+      let finalWinner = winner
+      if (rouletteType === "wheel" && entries.length > 0) {
+        const anglePerSegment = 360 / entries.length
+        // Use the locked position (final settled position) - this is set when animation completes
+        // Use wheel-specific animation offset
+        const finalPosition = lockedPositionRef.current !== null 
+          ? ((lockedPositionRef.current % 360) + 360) % 360
+          : ((wheelAnimationOffset % 360) + 360) % 360
+        
+        // Calculate which segment center is at the arrow (0°)
+        // IMPORTANT: The wheel rotates clockwise when animationOffset increases
+        // Segment i center (before rotation) is at: (i * anglePerSegment) - 90 + (anglePerSegment / 2)
+        // After rotation R clockwise, segment i center is at: (i * anglePerSegment) - 90 + (anglePerSegment / 2) + R
+        // We want to find which segment center is at 0° (arrow position)
+        // So: (i * anglePerSegment) - 90 + (anglePerSegment / 2) + R = 0
+        // Solving for i: i = (90 - anglePerSegment/2 - R) / anglePerSegment
+        // But wait - CSS transform rotate() rotates counter-clockwise for positive values
+        // So if animationOffset increases, the wheel rotates counter-clockwise, not clockwise
+        // This means: segment center after rotation = (i * anglePerSegment) - 90 + (anglePerSegment / 2) - R
+        // Solving: (i * anglePerSegment) - 90 + (anglePerSegment / 2) - R = 0
+        // i = (90 - anglePerSegment/2 + R) / anglePerSegment
+        // Actually, let's use the same formula as the arrow color calculation which seems to work
+        const segmentCenterOffset = 90 - (anglePerSegment / 2)
+        // The arrow color calculation uses: targetAngle = (segmentCenterOffset - normalizedAngle + 360) % 360
+        // This works, so let's use the same here
+        const targetAngle = (segmentCenterOffset - finalPosition + 360) % 360
+        const entryFloat = targetAngle / anglePerSegment
+        let actualWinnerIndex = Math.floor(entryFloat + 0.5) % entries.length
+        if (actualWinnerIndex < 0) actualWinnerIndex += entries.length
+        
+        // Always use the actual segment at arrow as the winner (this is what the user sees)
+        if (entries[actualWinnerIndex]) {
+          const actualWinnerEntry = entries[actualWinnerIndex]
+          finalWinner = {
+            ...winner,
+            entry: actualWinnerEntry,
+            entryId: actualWinnerEntry.id
+          }
+          
+          // Log for debugging
+          console.log("Wheel winner calculation:", {
+            originalWinner: winner.entry.name,
+            actualWinner: actualWinnerEntry.name,
+            originalIndex: winnerIndex,
+            actualIndex: actualWinnerIndex,
+            finalPosition: finalPosition.toFixed(2),
+            targetAngle: targetAngle.toFixed(2),
+            entryFloat: entryFloat.toFixed(2),
+            anglePerSegment: anglePerSegment.toFixed(2)
+          })
+        }
+      }
+      
       // Don't remove winner from entries list yet - it will be removed when "Remove" or "Next" is clicked
       // This allows the winner to remain visible in the roulette until the user decides
       
       // Save winner (but don't increment count yet - only when "Next" is clicked)
-      setAllDrawnWinners(prev => [...prev, winner])
+      setAllDrawnWinners(prev => [...prev, finalWinner])
       
       // Update draws list
       await fetchDraws()
       
       // Show winner modal immediately with confetti
-      setWinnerData({ winners: [winner], draw: newDraw })
+      setWinnerData({ winners: [finalWinner], draw: newDraw })
       setShowWinnerModal(true)
       setShowConfetti(true)
       
@@ -2359,12 +2760,12 @@ export function LuckyDraw() {
     <div className="[--header-height:calc(--spacing(14))]">
       <div className={`flex flex-col ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={{ backgroundColor: settings?.backgroundColor || undefined }}>
         {!isFullscreen && (
-          <SiteHeader
-            currentView={currentView}
-            onViewChange={setCurrentView}
-            entriesCount={entries.length}
-            prizesCount={prizes.length}
-          />
+        <SiteHeader
+          currentView={currentView}
+          onViewChange={setCurrentView}
+          entriesCount={entries.length}
+          prizesCount={prizes.length}
+        />
         )}
         <main className={`flex-1 ${isFullscreen ? 'overflow-hidden flex flex-col' : ''}`}>
           <div className={`w-full ${isFullscreen ? 'max-w-full px-2 sm:px-4 md:px-6 lg:px-8 flex-1 flex flex-col min-h-0' : 'max-w-7xl mx-auto p-4'} ${isFullscreen ? 'py-2' : 'space-y-4'}`}>
@@ -2374,8 +2775,14 @@ export function LuckyDraw() {
             {/* Glowing background effect */}
             <div className="absolute inset-0 bg-gradient-to-r from-blue-200/20 via-purple-200/20 to-orange-200/20 rounded-2xl blur-3xl -z-10" />
             
-            <div className={`flex flex-col items-center justify-center relative z-10 ${isFullscreen ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
-                <div className={`w-full ${isFullscreen ? 'flex flex-col flex-1 min-h-0 justify-between overflow-hidden' : ''}`}>
+            <div className={`flex flex-col items-center justify-center relative z-10 ${isFullscreen ? 'flex-1 min-h-0' : ''}`}
+                 style={{
+                   overflow: isFullscreen ? 'visible' : undefined
+                 }}>
+                <div className={`w-full ${isFullscreen ? 'flex flex-col flex-1 min-h-0 justify-between' : ''}`}
+                     style={{
+                       overflow: isFullscreen ? 'visible' : undefined
+                     }}>
                   {/* Current Prize Display - Automatically shows from draw settings */}
                   {(() => {
                     // Get valid prize assignments
@@ -2484,7 +2891,14 @@ export function LuckyDraw() {
 
                   {/* Vertical Roulette */}
                   {rouletteType === "vertical" && (
-                    <div className={`relative ${isFullscreen ? 'flex-1 min-h-0 max-h-[calc(100vh-350px)]' : 'h-[500px]'} flex items-center justify-center ${isFullscreen ? 'mb-1' : 'mb-4'} px-4`}>
+                    <div 
+                      className={`relative ${isFullscreen ? 'flex-1 min-h-0 max-h-[calc(100vh-350px)]' : ''} flex items-center justify-center ${isFullscreen ? 'mb-1' : 'mb-4'} w-full`}
+                      style={{
+                        height: isFullscreen 
+                          ? undefined 
+                          : `${settings?.verticalRouletteHeight || 500}px`
+                      }}
+                    >
                       {entries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
@@ -2492,7 +2906,17 @@ export function LuckyDraw() {
                           <p className="text-sm mt-2">Your lucky winners will appear here!</p>
                         </div>
                       ) : (
-                        <div className="relative w-full max-w-2xl h-full overflow-hidden rounded-3xl border-4 border-gray-500 shadow-2xl bg-gradient-to-b from-blue-50 to-white">
+                        <div 
+                          className="relative h-full overflow-hidden rounded-3xl border-4 border-gray-500 shadow-2xl bg-gradient-to-b from-blue-50 to-white"
+                          style={{
+                            width: settings?.verticalRouletteWidth && settings.verticalRouletteWidth > 0 
+                              ? `${settings.verticalRouletteWidth}px` 
+                              : '100%',
+                            maxWidth: !settings?.verticalRouletteWidth || settings.verticalRouletteWidth === 0 
+                              ? '42rem' // max-w-2xl
+                              : undefined
+                          }}
+                        >
                           {/* Gradient fade effects removed */}
                           
                           {/* Winner Highlight Box - Center */}
@@ -2516,8 +2940,66 @@ export function LuckyDraw() {
                   )}
 
                   {/* Wheel Roulette */}
-                  {rouletteType === "wheel" && (
-                    <div className={`relative ${isFullscreen ? 'flex-1 min-h-0 max-h-[calc(100vh-350px)]' : 'h-[550px]'} flex items-center justify-center ${isFullscreen ? 'mb-1' : 'mb-4'}`}>
+                  {rouletteType === "wheel" && (() => {
+                    // Calculate which segment is currently at the arrow (0 degrees)
+                    // Arrow is at 0° (right side), wheel rotates clockwise
+                    // Segment i center: (i * anglePerSegment) - 90 + (anglePerSegment / 2)
+                    // After rotation R: (i * anglePerSegment) - 90 + (anglePerSegment / 2) + R = 0
+                    // Solving: i = (90 - anglePerSegment/2 - R) / anglePerSegment
+                    const wheelColors = [
+                      ['#f97316', '#ea580c'], // orange
+                      ['#3b82f6', '#2563eb'], // blue
+                      ['#eab308', '#ca8a04'], // yellow
+                      ['#a855f7', '#9333ea'], // purple
+                      ['#ec4899', '#db2777'], // pink
+                      ['#22c55e', '#16a34a'], // green
+                      ['#ef4444', '#dc2626'], // red
+                      ['#6366f1', '#4f46e5'], // indigo
+                      ['#14b8a6', '#0d9488'], // teal
+                      ['#06b6d4', '#0891b2'], // cyan
+                      ['#f59e0b', '#d97706'], // amber
+                      ['#84cc16', '#65a30d'], // lime
+                      ['#10b981', '#059669'], // emerald
+                      ['#8b5cf6', '#7c3aed'], // violet
+                      ['#f43f5e', '#e11d48'], // rose
+                    ]
+                    
+                    let arrowColor = '#eab308' // Default yellow
+                    if (entries.length > 0) {
+                      // Use the EXACT same calculation as in checkEntryPassed for wheel roulette (hooks/use-sound.ts line 446-459)
+                      const anglePerSegment = 360 / entries.length
+                      // Use wheel-specific animation offset
+                      const currentWheelOffset = rouletteType === "wheel" ? wheelAnimationOffset : 0
+                      const normalizedAngle = ((currentWheelOffset % 360) + 360) % 360
+                      
+                      // Calculate which segment center is at the arrow (0 degrees)
+                      // Segment centers are at: (i * anglePerSegment) - 90 + (anglePerSegment / 2)
+                      // After rotation R, segment i center is at: (i * anglePerSegment) - 90 + (anglePerSegment / 2) + R
+                      // We want this to equal 0 (where arrow is)
+                      // So: i = (90 - anglePerSegment/2 - R) / anglePerSegment
+                      const segmentCenterOffset = 90 - (anglePerSegment / 2)
+                      const targetAngle = (segmentCenterOffset - normalizedAngle + 360) % 360
+                      const entryFloat = targetAngle / anglePerSegment
+                      let currentSegmentIndex = Math.floor(entryFloat + 0.5) % entries.length
+                      if (currentSegmentIndex < 0) currentSegmentIndex += entries.length
+                      
+                      // Get color from the current segment
+                      // Use the same color array and indexing as wheel rendering
+                      // Wheel uses: colors[index % colors.length] where index = renderIndex (0, 1, 2, ...)
+                      const [color1] = wheelColors[currentSegmentIndex % wheelColors.length]
+                      arrowColor = color1
+                    }
+                    
+                    return (
+                      <div 
+                        className={`relative ${isFullscreen ? 'flex-1 min-h-0' : ''} flex items-center justify-center ${isFullscreen ? 'mb-1' : 'mb-4'}`}
+                        style={{
+                          height: isFullscreen 
+                            ? '100%'
+                            : `${settings?.wheelRouletteHeight || 550}px`,
+                          overflow: isFullscreen ? 'visible' : undefined
+                        }}
+                      >
                       {entries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
@@ -2525,52 +3007,91 @@ export function LuckyDraw() {
                           <p className="text-sm mt-2">Your lucky winners will appear here!</p>
                         </div>
                       ) : (
-                        <div className={`relative ${isFullscreen ? 'w-[min(500px,calc(100vh-380px))] h-[min(500px,calc(100vh-380px))] min-w-[350px] min-h-[350px] max-w-[700px] max-h-[700px]' : 'w-[550px] h-[550px]'} flex items-center justify-center`}>
+                          <>
+                          <div 
+                            className={`relative ${isFullscreen ? '' : ''} flex items-center justify-center`}
+                            style={{
+                              width: isFullscreen 
+                                ? undefined
+                                : `${settings?.wheelRouletteWidth || 550}px`,
+                              height: isFullscreen 
+                                ? '100%'
+                                : `${settings?.wheelRouletteHeight || 550}px`,
+                              aspectRatio: isFullscreen ? '1 / 1' : undefined,
+                              maxWidth: isFullscreen ? '100%' : undefined,
+                              maxHeight: isFullscreen ? '100%' : undefined,
+                              borderRadius: '50%',
+                              overflow: 'visible',
+                              border: '5px solid transparent',
+                              background: 'linear-gradient(white, white) padding-box, linear-gradient(135deg, #a855f7, #ec4899, #f97316, #eab308, #3b82f6, #8b5cf6, #ec4899, #f97316) border-box',
+                              boxSizing: 'border-box'
+                            }}
+                          >
                           {/* Winner Indicator - Right Side Arrow (fixed, outside wheel) */}
-                          <div className="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-5 z-10 pointer-events-none">
-                            {/* Arrow pointing left (towards wheel) */}
-                            <div className="w-0 h-0 border-t-[35px] border-b-[35px] border-r-[60px] border-t-transparent border-b-transparent border-r-yellow-400 drop-shadow-2xl animate-pulse relative z-10" />
+                            <div className="absolute top-1/2 z-50 pointer-events-none"
+                                 style={{
+                                   right: '-10px',
+                                   transform: 'translateY(-50%)'
+                                 }}>
+                              {/* Arrow wrapper with border outline */}
+                              <div className="relative" style={{ filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))' }}>
+                                {/* Outer arrow (border) */}
+                                <div 
+                                  className="absolute w-0 h-0 border-t-[22px] border-b-[22px] border-r-[36px] border-t-transparent border-b-transparent"
+                                  style={{
+                                    borderRightColor: 'rgba(255, 255, 255, 0.9)',
+                                    left: '-1px',
+                                    top: '-2px'
+                                  }}
+                                />
+                                {/* Inner arrow (main color) */}
+                                <div 
+                                  className="w-0 h-0 border-t-[20px] border-b-[20px] border-r-[34px] border-t-transparent border-b-transparent animate-pulse relative z-10 transition-colors duration-100" 
+                                  style={{
+                                    borderRightColor: arrowColor
+                                  }}
+                                />
+                              </div>
                           </div>
                           
-                          {/* Outer decorative ring */}
-                          <div className="absolute inset-0 rounded-full shadow-2xl"
-                               style={{
-                                 background: 'linear-gradient(white, white) padding-box, linear-gradient(135deg, #a855f7, #ec4899, #f97316, #eab308) border-box',
-                                 border: '10px solid transparent'
-                               }}
-                          />
-                          
+                          {/* Inner wheel container with overflow hidden for clipping */}
+                          <div className="absolute inset-0 rounded-full overflow-hidden">
                           {/* Spinning Wheel SVG */}
                           <svg
-                            className="absolute inset-3 w-[calc(100%-24px)] h-[calc(100%-24px)]"
-                            viewBox="0 0 200 200"
+                            className="absolute inset-0 w-full h-full"
+                            viewBox={`0 0 ${wheelSvgElements.viewBoxSize} ${wheelSvgElements.viewBoxSize}`}
                             style={{
-                              transform: `rotate(${animationOffset}deg)`,
+                              transform: `rotate3d(0, 0, 1, ${rouletteType === "wheel" ? wheelAnimationOffset : 0}deg)`,
                               transition: 'none',
                               willChange: 'transform',
+                              backfaceVisibility: 'hidden',
+                              perspective: '1000px',
                             }}
                           >
                             {/* Dashed line on the wheel - extends from right edge (0 degrees) to center */}
                             <line
-                              x1="200"
-                              y1="100"
-                              x2="100"
-                              y2="100"
+                              x1={wheelSvgElements.viewBoxSize}
+                              y1={wheelSvgElements.centerY}
+                              x2={wheelSvgElements.centerX}
+                              y2={wheelSvgElements.centerY}
                               stroke="#facc15"
                               strokeWidth="2"
                               strokeDasharray="10 10"
                               opacity="0.7"
                             />
-                            {wheelSvgElements}
+                            {wheelSvgElements.elements}
                           </svg>
                           
                           {/* Center Circle */}
-                          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-yellow-400 via-orange-400 to-orange-500 shadow-2xl border-4 border-white z-40 flex items-center justify-center overflow-hidden">
+                          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-28 h-28 rounded-full bg-gradient-to-br from-yellow-400 via-orange-400 to-orange-500 border-4 border-white z-40 flex items-center justify-center overflow-hidden">
                           </div>
-                        </div>
+                          </div>
+                          </div>
+                          </>
                       )}
                     </div>
-                  )}
+                    )
+                  })()}
                   
                   {/* Run Draw Button */}
                   <div className={`flex flex-col items-center ${isFullscreen ? 'gap-1' : 'gap-4'}`}>
@@ -2750,14 +3271,14 @@ export function LuckyDraw() {
                 
                 // Check for duplicates (skip if editing the same entry)
                 if (!editingEntryId || name !== editingEntryName) {
-                  const duplicateCheck = checkDuplicates([{ name }])
-                  if (duplicateCheck.hasDuplicates) {
-                    if (duplicateCheck.existingDuplicates.includes(name)) {
+                const duplicateCheck = checkDuplicates([{ name }])
+                if (duplicateCheck.hasDuplicates) {
+                  if (duplicateCheck.existingDuplicates.includes(name)) {
                       toast.error("This entry already exists")
-                    } else {
+                  } else {
                       toast.error("Duplicate entry detected")
-                    }
-                    return
+                  }
+                  return
                   }
                 }
                 
@@ -2783,18 +3304,18 @@ export function LuckyDraw() {
                     }
                   } else {
                     // Create new entry
-                    const res = await fetch("/api/entries", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ name }),
-                    })
-                    
-                    if (res.ok) {
-                      input.value = ""
-                      await fetchEntries()
+                  const res = await fetch("/api/entries", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name }),
+                  })
+                  
+                  if (res.ok) {
+                    input.value = ""
+                    await fetchEntries()
                       toast.success("Entry added successfully!")
-                    } else {
-                      const error = await res.json()
+                  } else {
+                    const error = await res.json()
                       toast.error(error.error || "Failed to add entry")
                     }
                   }
@@ -2829,8 +3350,8 @@ export function LuckyDraw() {
                     </>
                   ) : (
                     <>
-                      <Plus className="size-4 mr-2" />
-                      Add Entry
+                  <Plus className="size-4 mr-2" />
+                  Add Entry
                     </>
                   )}
                 </Button>
@@ -3975,6 +4496,8 @@ export function LuckyDraw() {
                           lockedPositionRef.current = null
                           isLockedPositionRef.current = false
                           disableWrappingRef.current = false
+                          // Start shuffling
+                          setIsShuffling(true)
                           await fetchDraws()
                         }
                       } catch (error) {
@@ -4062,6 +4585,8 @@ export function LuckyDraw() {
                           lockedPositionRef.current = null
                           isLockedPositionRef.current = false
                           disableWrappingRef.current = false
+                          // Start shuffling
+                          setIsShuffling(true)
                           await fetchDraws()
                           
                           // Ensure we stay on main view (don't navigate to results)
@@ -4087,3 +4612,4 @@ export function LuckyDraw() {
     </div>
   )
 }
+

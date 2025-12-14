@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Settings, Palette, Type, Volume2, Music, Plus, X } from "lucide-react"
+import { Settings, Palette, Type, Volume2, Music, Plus, X, Play, ScrollText, Trophy, ArrowDown, Disc3, Image as ImageIcon } from "lucide-react"
 import { toast } from "react-toastify"
 import {
   AlertDialog,
@@ -37,11 +37,18 @@ interface SettingsData {
   prizeTitleBackgroundSize?: number // Custom padding/height for prize title background
   verticalRouletteTextSize?: number // Custom font size for vertical roulette entry names
   verticalRouletteContainerHeight?: number // Custom height for vertical roulette entry containers
+  verticalRouletteWidth?: number // Custom width for vertical roulette container
+  verticalRouletteHeight?: number // Custom height for vertical roulette container
+  wheelRouletteTextSize?: number // Base font size for wheel roulette entry names (will scale based on entries)
+  wheelRouletteContainerHeight?: number // Custom height for wheel roulette entry containers
+  wheelRouletteWidth?: number // Custom width for wheel roulette container
+  wheelRouletteHeight?: number // Custom height for wheel roulette container
   logos?: Array<{ url: string; size: number; opacity?: number }> // Array of logo objects with URL, size, and opacity
   soundEnabled?: boolean
   drawSound?: string // Draw/roulette sound (data URL or file path), default is ticking sound
   modalMusic?: string
   modalMusicVolume?: number
+  shuffleNamesEnabled?: boolean // Enable/disable continuous name shuffling when not drawing
 }
 
 export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (settings: SettingsData) => void }) {
@@ -67,10 +74,17 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
     prizeTitleBackgroundSize: 12, // Default padding in px (p-3 = 12px)
     verticalRouletteTextSize: 18, // Default font size in px (text-lg)
     verticalRouletteContainerHeight: 70, // Default container height in px
+    verticalRouletteWidth: 0, // 0 means use default (full width with max-w-2xl)
+    verticalRouletteHeight: 500, // Default height in px
+    wheelRouletteTextSize: 6, // Default base font size in px for wheel roulette
+    wheelRouletteContainerHeight: 70, // Default container height in px
+    wheelRouletteWidth: 550, // Default width in px
+    wheelRouletteHeight: 550, // Default height in px
     logos: [],
     soundEnabled: true,
     modalMusic: "",
     modalMusicVolume: 0.5,
+    shuffleNamesEnabled: true, // Default to enabled
   })
 
   useEffect(() => {
@@ -109,9 +123,16 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
         if (parsed.prizeTitleBackgroundSize === undefined) parsed.prizeTitleBackgroundSize = 12 // Default padding
         if (parsed.verticalRouletteTextSize === undefined) parsed.verticalRouletteTextSize = 18 // Default font size
         if (parsed.verticalRouletteContainerHeight === undefined) parsed.verticalRouletteContainerHeight = 70 // Default container height
+        if (parsed.verticalRouletteWidth === undefined) parsed.verticalRouletteWidth = 0 // Default width (auto)
+        if (parsed.verticalRouletteHeight === undefined) parsed.verticalRouletteHeight = 500 // Default height
+        if (parsed.wheelRouletteTextSize === undefined) parsed.wheelRouletteTextSize = 6 // Default base font size for wheel
+        if (parsed.wheelRouletteContainerHeight === undefined) parsed.wheelRouletteContainerHeight = 70 // Default container height
+        if (parsed.wheelRouletteWidth === undefined) parsed.wheelRouletteWidth = 550 // Default width
+        if (parsed.wheelRouletteHeight === undefined) parsed.wheelRouletteHeight = 550 // Default height
         if (parsed.soundEnabled === undefined) parsed.soundEnabled = true
         if (parsed.modalMusic === undefined) parsed.modalMusic = ""
         if (parsed.modalMusicVolume === undefined) parsed.modalMusicVolume = 0.5
+        if (parsed.shuffleNamesEnabled === undefined) parsed.shuffleNamesEnabled = true
         setSettings(parsed)
         onSettingsChange(parsed)
       } catch (e) {
@@ -228,7 +249,10 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
 
       {/* Animation Settings */}
       <div className="border-t pt-6 space-y-4">
-        <h3 className="text-lg font-semibold">Animation Settings</h3>
+        <h3 className="text-lg font-semibold flex items-center justify-between pb-3 border-b">
+          <span>Animation Settings</span>
+          <Play className="size-5" />
+        </h3>
         
         {/* Reveal Delay */}
         <div className="space-y-2">
@@ -289,11 +313,35 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
           </div>
           <p className="text-xs text-muted-foreground">How long the roulette spins before stopping (1-60 seconds, works for both vertical and wheel)</p>
         </div>
+
+        {/* Shuffle Names Toggle */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="shuffleNamesEnabled">Shuffle Names When Not Drawing</Label>
+            <input
+              type="checkbox"
+              id="shuffleNamesEnabled"
+              checked={settings.shuffleNamesEnabled !== false}
+              onChange={(e) => {
+                const newSettings = { ...settings, shuffleNamesEnabled: e.target.checked }
+                setSettings(newSettings)
+                // Auto-save shuffle setting
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="size-4 cursor-pointer"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">Continuously shuffle entry names when not actively drawing (works for both vertical and wheel modes)</p>
+        </div>
       </div>
 
       {/* Marquee Settings */}
       <div className="border-t pt-6 space-y-4">
-        <h3 className="text-lg font-semibold">Marquee Settings</h3>
+        <h3 className="text-lg font-semibold flex items-center justify-between pb-3 border-b">
+          <span>Marquee Settings</span>
+          <ScrollText className="size-5" />
+        </h3>
         
         {/* Marquee Toggle */}
         <div className="space-y-2">
@@ -491,7 +539,10 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
 
       {/* Prize Title Banner Settings */}
       <div className="border-t pt-6 space-y-4">
-        <h3 className="text-lg font-semibold">Prize Title Banner Settings</h3>
+        <h3 className="text-lg font-semibold flex items-center justify-between pb-3 border-b">
+          <span>Prize Title Banner Settings</span>
+          <Trophy className="size-5" />
+        </h3>
         <div className="space-y-2">
           <Label htmlFor="prizeTitleBackgroundColor">Prize Title Background Color</Label>
           <div className="flex items-center gap-3">
@@ -602,7 +653,10 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
 
       {/* Vertical Roulette Settings */}
       <div className="border-t pt-6 space-y-4">
-        <h3 className="text-lg font-semibold">Vertical Roulette Settings</h3>
+        <h3 className="text-lg font-semibold flex items-center justify-between pb-3 border-b">
+          <span>Vertical Roulette Settings</span>
+          <ArrowDown className="size-5" />
+        </h3>
         <p className="text-xs text-muted-foreground">Customize the appearance of the vertical roulette entries (text size and container height)</p>
         
         {/* Vertical Roulette Text Size */}
@@ -616,10 +670,7 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
               max="48"
               value={settings.verticalRouletteTextSize || 18}
               onChange={(e) => {
-                const newSettings = { ...settings, verticalRouletteTextSize: Math.max(8, Math.min(48, parseInt(e.target.value) || 18)) }
-                setSettings(newSettings)
-                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
-                onSettingsChange(newSettings)
+                setSettings({ ...settings, verticalRouletteTextSize: Math.max(8, Math.min(48, parseInt(e.target.value) || 18)) })
               }}
               className="w-24"
             />
@@ -632,10 +683,7 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
                 step="1"
                 value={settings.verticalRouletteTextSize || 18}
                 onChange={(e) => {
-                  const newSettings = { ...settings, verticalRouletteTextSize: parseInt(e.target.value) }
-                  setSettings(newSettings)
-                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
-                  onSettingsChange(newSettings)
+                  setSettings({ ...settings, verticalRouletteTextSize: parseInt(e.target.value) })
                 }}
                 className="w-full"
               />
@@ -654,10 +702,7 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
               max="150"
               value={settings.verticalRouletteContainerHeight || 70}
               onChange={(e) => {
-                const newSettings = { ...settings, verticalRouletteContainerHeight: Math.max(40, Math.min(150, parseInt(e.target.value) || 70)) }
-                setSettings(newSettings)
-                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
-                onSettingsChange(newSettings)
+                setSettings({ ...settings, verticalRouletteContainerHeight: Math.max(40, Math.min(150, parseInt(e.target.value) || 70)) })
               }}
               className="w-24"
             />
@@ -670,7 +715,220 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
                 step="5"
                 value={settings.verticalRouletteContainerHeight || 70}
                 onChange={(e) => {
-                  const newSettings = { ...settings, verticalRouletteContainerHeight: parseInt(e.target.value) }
+                  setSettings({ ...settings, verticalRouletteContainerHeight: parseInt(e.target.value) })
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Vertical Roulette Width */}
+        <div className="space-y-2">
+          <Label htmlFor="verticalRouletteWidth">Vertical Roulette Width</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="verticalRouletteWidth"
+              type="number"
+              min="0"
+              max="2000"
+              value={settings.verticalRouletteWidth || 0}
+              onChange={(e) => {
+                setSettings({ ...settings, verticalRouletteWidth: Math.max(0, Math.min(2000, parseInt(e.target.value) || 0)) })
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (0 = auto/full width)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="0"
+                max="2000"
+                step="50"
+                value={settings.verticalRouletteWidth || 0}
+                onChange={(e) => {
+                  setSettings({ ...settings, verticalRouletteWidth: parseInt(e.target.value) })
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Vertical Roulette Height */}
+        <div className="space-y-2">
+          <Label htmlFor="verticalRouletteHeight">Vertical Roulette Height</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="verticalRouletteHeight"
+              type="number"
+              min="200"
+              max="1000"
+              value={settings.verticalRouletteHeight || 500}
+              onChange={(e) => {
+                setSettings({ ...settings, verticalRouletteHeight: Math.max(200, Math.min(1000, parseInt(e.target.value) || 500)) })
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (200-1000)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="200"
+                max="1000"
+                step="50"
+                value={settings.verticalRouletteHeight || 500}
+                onChange={(e) => {
+                  setSettings({ ...settings, verticalRouletteHeight: parseInt(e.target.value) })
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Wheel Roulette Settings */}
+      <div className="border-t pt-6 space-y-4">
+        <h3 className="text-lg font-semibold flex items-center justify-between pb-3 border-b">
+          <span>Wheel Roulette Settings</span>
+          <Disc3 className="size-5" />
+        </h3>
+        <p className="text-xs text-muted-foreground">Customize the appearance of the wheel roulette entries (text size and container height)</p>
+        
+        {/* Wheel Roulette Text Size */}
+        <div className="space-y-2">
+          <Label htmlFor="wheelRouletteTextSize">Wheel Roulette Base Text Size</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="wheelRouletteTextSize"
+              type="number"
+              min="6"
+              max="24"
+              value={settings.wheelRouletteTextSize || 6}
+              onChange={(e) => {
+                setSettings({ ...settings, wheelRouletteTextSize: Math.max(6, Math.min(24, parseInt(e.target.value) || 6)) })
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (6-24, base size)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="6"
+                max="24"
+                step="1"
+                value={settings.wheelRouletteTextSize || 6}
+                onChange={(e) => {
+                  setSettings({ ...settings, wheelRouletteTextSize: parseInt(e.target.value) })
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Note: Text size will automatically scale down when there are many entries to ensure readability
+          </p>
+        </div>
+
+        {/* Wheel Roulette Container Height */}
+        <div className="space-y-2">
+          <Label htmlFor="wheelRouletteContainerHeight">Wheel Roulette Container Height</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="wheelRouletteContainerHeight"
+              type="number"
+              min="40"
+              max="150"
+              value={settings.wheelRouletteContainerHeight || 70}
+              onChange={(e) => {
+                setSettings({ ...settings, wheelRouletteContainerHeight: Math.max(40, Math.min(150, parseInt(e.target.value) || 70)) })
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (40-150)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="40"
+                max="150"
+                step="5"
+                value={settings.wheelRouletteContainerHeight || 70}
+                onChange={(e) => {
+                  setSettings({ ...settings, wheelRouletteContainerHeight: parseInt(e.target.value) })
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Wheel Roulette Width */}
+        <div className="space-y-2">
+          <Label htmlFor="wheelRouletteWidth">Wheel Roulette Width</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="wheelRouletteWidth"
+              type="number"
+              min="300"
+              max="1000"
+              value={settings.wheelRouletteWidth || 550}
+              onChange={(e) => {
+                const newSettings = { ...settings, wheelRouletteWidth: Math.max(300, Math.min(1000, parseInt(e.target.value) || 550)) }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (300-1000)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="300"
+                max="1000"
+                step="50"
+                value={settings.wheelRouletteWidth || 550}
+                onChange={(e) => {
+                  const newSettings = { ...settings, wheelRouletteWidth: parseInt(e.target.value) }
+                  setSettings(newSettings)
+                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                  onSettingsChange(newSettings)
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Wheel Roulette Height */}
+        <div className="space-y-2">
+          <Label htmlFor="wheelRouletteHeight">Wheel Roulette Height</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="wheelRouletteHeight"
+              type="number"
+              min="300"
+              max="1000"
+              value={settings.wheelRouletteHeight || 550}
+              onChange={(e) => {
+                const newSettings = { ...settings, wheelRouletteHeight: Math.max(300, Math.min(1000, parseInt(e.target.value) || 550)) }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">px (300-1000)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="300"
+                max="1000"
+                step="50"
+                value={settings.wheelRouletteHeight || 550}
+                onChange={(e) => {
+                  const newSettings = { ...settings, wheelRouletteHeight: parseInt(e.target.value) }
                   setSettings(newSettings)
                   localStorage.setItem("drawSettings", JSON.stringify(newSettings))
                   onSettingsChange(newSettings)
@@ -684,13 +942,16 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
 
       {/* Logo Settings */}
       <div className="border-t pt-6 space-y-4">
-        <h3 className="text-lg font-semibold">Logo Settings</h3>
+        <h3 className="text-lg font-semibold flex items-center justify-between pb-3 border-b">
+          <span>Logo Settings</span>
+          <ImageIcon className="size-5" />
+        </h3>
         
         <div className="space-y-2">
           <Label>Logos (Displayed below marquee)</Label>
           <p className="text-xs text-muted-foreground">Add multiple logos to display below the marquee. Customize the size for each logo.</p>
           
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
             {(settings.logos || []).map((logoItem, index) => {
               // Handle backward compatibility: if logo is a string, convert to object
               const logo = typeof logoItem === 'string' ? { url: logoItem, size: 64, opacity: 100 } : { ...logoItem, opacity: logoItem.opacity || 100 }
@@ -901,9 +1162,9 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
 
       {/* Sound Settings */}
       <div className="border-t pt-6 space-y-4">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
+        <h3 className="text-lg font-semibold flex items-center justify-between pb-3 border-b">
+          <span>Sound Settings</span>
           <Volume2 className="size-5" />
-          Sound Settings
         </h3>
         
         {/* Sound Toggle */}
