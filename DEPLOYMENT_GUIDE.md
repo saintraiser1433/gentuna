@@ -222,3 +222,5 @@ If you encounter issues:
 4. Check if port is available: `netstat -an | findstr :3000` (Windows) or `lsof -i :3000` (Linux/Mac)
 5. Review logs in `logs/` folder if using PM2
 
+
+

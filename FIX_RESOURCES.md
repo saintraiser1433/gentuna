@@ -83,3 +83,5 @@ After fixing, check that these paths exist:
 
 Always use `npm run build:portable` to create the deployment package. This ensures files are in the correct locations.
 
+
+

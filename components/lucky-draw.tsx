@@ -705,6 +705,23 @@ export function LuckyDraw() {
     }
   }
 
+  // Filter out winners from entries for display in roulette
+  // This ensures winners don't appear in the roulette even if they're still in the entries state
+  // ALL winners are excluded (both "present" and "not_present") - once someone wins, they're out
+  const availableEntries = useMemo(() => {
+    // Get all winner entry IDs from all draws (regardless of status)
+    const winnerIds = new Set<string>()
+    draws.forEach(draw => {
+      draw.winners.forEach(winner => {
+        // Exclude ALL winners regardless of status - once they win, they're out of the pool
+        winnerIds.add(winner.entry.id)
+      })
+    })
+    
+    // Filter out entries that are winners
+    return entries.filter(entry => !winnerIds.has(entry.id))
+  }, [entries, draws])
+
   // Export winners by status to Excel or PDF
   const handleExportWinnersByStatus = (status: "present" | "not_present", format: "excel" | "pdf") => {
     try {
@@ -1069,11 +1086,10 @@ export function LuckyDraw() {
         const prize = prizes.find(p => p.id === assignment.prizeId)
         if (!prize) continue
         
-        // Calculate how many winners have been drawn for this prize (excluding "not_present")
+        // Calculate how many winners have been drawn for this prize
+        // Count ALL winners (both "present" and "not_present") towards the prize limit
         const drawnWinnersForPrize = draws.reduce((count, draw) => {
-          return count + draw.winners.filter(w => 
-            w.prizeId === prize.id && (w.status || 'present') === 'present'
-          ).length
+          return count + draw.winners.filter(w => w.prizeId === prize.id).length
         }, 0)
         
         const remainingForPrize = assignment.count - drawnWinnersForPrize
@@ -1181,7 +1197,7 @@ export function LuckyDraw() {
 
   // Smooth continuous animation - never restarts
   useEffect(() => {
-    if (entries.length === 0) {
+    if (availableEntries.length === 0) {
       setShuffledEntries([])
       setAnimationOffset(0)
       offsetRef.current = 0
@@ -1197,14 +1213,14 @@ export function LuckyDraw() {
     // Shuffle entries if isShuffling is true, otherwise keep consistent order
     if (rouletteType !== "wheel") {
       // Only update if entries actually changed (by ID comparison) or if shuffling
-      const currentIds = entries.map(e => e.id).join(',')
-      const existingIds = shuffledEntries.slice(0, entries.length).map(e => e.id).join(',')
+      const currentIds = availableEntries.map(e => e.id).join(',')
+      const existingIds = shuffledEntries.slice(0, availableEntries.length).map(e => e.id).join(',')
       
       if (shuffledEntries.length === 0 || currentIds !== existingIds || isShuffling) {
-        const entriesToUse = [...entries]
+        const entriesToUse = [...availableEntries]
         
         // Shuffle if isShuffling is true
-        if (isShuffling && entries.length > 0) {
+        if (isShuffling && availableEntries.length > 0) {
           // Fisher-Yates shuffle algorithm
           for (let i = entriesToUse.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -1218,8 +1234,8 @@ export function LuckyDraw() {
     }
     
     // For wheel, initialize shuffled entries when shuffling starts
-    if (rouletteType === "wheel" && isShuffling && shuffledWheelEntries.length === 0 && entries.length > 0) {
-      const shuffled = [...entries]
+    if (rouletteType === "wheel" && isShuffling && shuffledWheelEntries.length === 0 && availableEntries.length > 0) {
+      const shuffled = [...availableEntries]
       for (let i = shuffled.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
@@ -1233,7 +1249,7 @@ export function LuckyDraw() {
     // Calculate loop dimensions
     let loopSize: number
     if (rouletteType === "vertical") {
-      loopSize = entries.length * 80 // itemHeight(70) + spacing(10)
+      loopSize = availableEntries.length * 80 // itemHeight(70) + spacing(10)
     } else {
       loopSize = 360 // degrees for wheel
     }
@@ -1242,7 +1258,7 @@ export function LuckyDraw() {
     if (!animationRef.current) {
       lastTimeRef.current = performance.now()
       let frameCount = 0
-      const throttleFrames = entries.length > 200 ? 3 : entries.length > 100 ? 2 : 1 // Throttle more for many entries
+      const throttleFrames = availableEntries.length > 200 ? 3 : availableEntries.length > 100 ? 2 : 1 // Throttle more for many entries
       
       const animate = (currentTime: number) => {
         const deltaTime = Math.min((currentTime - lastTimeRef.current) / 1000, 0.1) // Cap deltaTime to prevent large jumps
@@ -1340,14 +1356,14 @@ export function LuckyDraw() {
     return () => {
       // Keep animation running, just cleanup reference
     }
-  }, [entries, rouletteType, isShuffling])
+  }, [availableEntries, rouletteType, isShuffling])
 
   // Continuous shuffling effect when isShuffling is true
   useEffect(() => {
-    if (isShuffling && entries.length > 0) {
+    if (isShuffling && availableEntries.length > 0) {
       // Initialize immediately when shuffling starts, especially for wheel mode
       if (rouletteType === "vertical") {
-        const shuffled = [...entries]
+        const shuffled = [...availableEntries]
         for (let i = shuffled.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
@@ -1355,7 +1371,7 @@ export function LuckyDraw() {
         const extendedEntries = [...shuffled, ...shuffled, ...shuffled, ...shuffled]
         setShuffledEntries(extendedEntries)
       } else if (rouletteType === "wheel") {
-        const shuffled = [...entries]
+        const shuffled = [...availableEntries]
         for (let i = shuffled.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
@@ -1419,10 +1435,10 @@ export function LuckyDraw() {
     // - Entries exist
     // This works for both vertical and wheel modes
     // Note: We allow shuffling even if isDrawingInProgress is true (between draws)
-    if (entries.length > 0 && !isShuffling) {
+    if (availableEntries.length > 0 && !isShuffling) {
       setIsShuffling(true)
     }
-  }, [drawing, entries.length, isShuffling, rouletteType, settings?.shuffleNamesEnabled])
+  }, [drawing, availableEntries.length, isShuffling, rouletteType, settings?.shuffleNamesEnabled])
 
   // Memoize colors array to avoid recreating it
   const verticalColors = useMemo(() => [
@@ -1441,11 +1457,14 @@ export function LuckyDraw() {
   // Calculate vertical roulette items (not memoized since animationOffset changes every frame)
   // But we optimize by only calculating visible items
   const getVerticalRouletteItems = () => {
-    if (rouletteType !== "vertical" || entries.length === 0) return []
+    if (rouletteType !== "vertical" || availableEntries.length === 0) return []
     
-    // Use shuffled entries if shuffling is active, otherwise use original entries
-    const entriesToUse = isShuffling && shuffledEntries.length > 0 ? shuffledEntries : entries
-    const baseEntriesLength = entries.length
+    // Use shuffled entries if shuffling is active, otherwise use available entries (filtered)
+    // Filter shuffled entries to exclude winners as well
+    const entriesToUse = isShuffling && shuffledEntries.length > 0 
+      ? shuffledEntries.filter(e => availableEntries.some(ae => ae.id === e.id))
+      : availableEntries
+    const baseEntriesLength = availableEntries.length
     
     const itemHeight = settings?.verticalRouletteContainerHeight || 70
     const itemSpacing = 10
@@ -1535,7 +1554,7 @@ export function LuckyDraw() {
   // Memoize wheel SVG elements for performance (must be at top level)
   // For large entry counts, limit rendering to prevent hangs
   const wheelSvgElements = useMemo(() => {
-    if (rouletteType !== "wheel" || entries.length === 0) return {
+    if (rouletteType !== "wheel" || availableEntries.length === 0) return {
       elements: null,
       viewBoxSize: 200,
       centerX: 100,
@@ -1544,7 +1563,10 @@ export function LuckyDraw() {
     }
     
     // Use shuffled entries if shuffling, otherwise use original entries
-    const entriesToRender = isShuffling && shuffledWheelEntries.length > 0 ? shuffledWheelEntries : entries
+    // Filter shuffled wheel entries to exclude winners, or use available entries
+    const entriesToRender = isShuffling && shuffledWheelEntries.length > 0 
+      ? shuffledWheelEntries.filter(e => availableEntries.some(ae => ae.id === e.id))
+      : availableEntries
     
     const colors = [
       ['#f97316', '#ea580c'], // orange - vibrant
@@ -1564,7 +1586,7 @@ export function LuckyDraw() {
       ['#f43f5e', '#e11d48'], // rose
     ]
     
-    const totalEntries = entries.length
+    const totalEntries = availableEntries.length
     const anglePerSegment = 360 / totalEntries
     
     // Calculate dynamic radius based on entry count - larger radius for more entries to fit text
@@ -1629,8 +1651,8 @@ export function LuckyDraw() {
     // Font size should be about 60-70% of the radial height to fit nicely
     // Also consider arc length for width constraints
     const arcLengthAtText = textRadius * (anglePerSegment * Math.PI / 180)
-    const avgEntryNameLength = entries.length > 0 
-      ? entries.reduce((sum, e) => sum + e.name.length, 0) / entries.length 
+    const avgEntryNameLength = availableEntries.length > 0 
+      ? availableEntries.reduce((sum, e) => sum + e.name.length, 0) / availableEntries.length 
       : 10
     
     // Calculate font size based on radial height (primary) and arc length (secondary)
@@ -2342,7 +2364,7 @@ export function LuckyDraw() {
           const newDraw = await res.json()
           const allWinners = newDraw.winners
           
-          // Remove all winners from entries list
+          // Remove all winners from entries list immediately
           const winnerIds = new Set(allWinners.map((w: Winner) => w.entry.id))
           setEntries(prevEntries => prevEntries.filter(e => !winnerIds.has(e.id)))
           
@@ -2350,6 +2372,9 @@ export function LuckyDraw() {
           for (let i = 0; i < allWinners.length; i++) {
             drawnWinners.push(allWinners[i])
           }
+          
+          // Refresh entries from server to ensure sync with database
+          await fetchEntries()
           
           // Get the reveal delay (default to 3 seconds)
           const revealDelaySeconds = currentAssignment?.autoDrawDelay || 3
@@ -2463,12 +2488,11 @@ export function LuckyDraw() {
                 const prize = prizes.find(p => p.id === assignment.prizeId)
                 if (!prize) continue
                 
-                // Calculate remaining winners for this prize (excluding "not_present")
+                // Calculate remaining winners for this prize
+                // Count ALL winners (both "present" and "not_present") towards the prize limit
                 // Use the current draws state which should be updated after fetchDraws()
                 const drawnWinnersForPrize = draws.reduce((count, draw) => {
-                  return count + draw.winners.filter(w => 
-                    w.prizeId === prize.id && (w.status || 'present') === 'present'
-                  ).length
+                  return count + draw.winners.filter(w => w.prizeId === prize.id).length
                 }, 0)
                 
                 const remainingForPrize = assignment.count - drawnWinnersForPrize
@@ -2846,13 +2870,12 @@ export function LuckyDraw() {
               const prize = prizes.find(p => p.id === assignment.prizeId)
               if (!prize) continue
               
-              // Calculate remaining winners for this prize (excluding "not_present")
-              // Use the current draws state which should be updated after fetchDraws()
-              const drawnWinnersForPrize = draws.reduce((count, draw) => {
-                return count + draw.winners.filter(w => 
-                  w.prizeId === prize.id && (w.status || 'present') === 'present'
-                ).length
-              }, 0)
+                // Calculate remaining winners for this prize
+                // Count ALL winners (both "present" and "not_present") towards the prize limit
+                // Use the current draws state which should be updated after fetchDraws()
+                const drawnWinnersForPrize = draws.reduce((count, draw) => {
+                  return count + draw.winners.filter(w => w.prizeId === prize.id).length
+                }, 0)
               
               const remainingForPrize = assignment.count - drawnWinnersForPrize
               
@@ -5009,10 +5032,9 @@ export function LuckyDraw() {
                   const currentCount = assignment?.count || 0
                   
                   // Calculate how many winners have been drawn for this prize (excluding "not_present")
+                  // Count ALL winners (both "present" and "not_present") towards the prize limit
                   const drawnWinnersForPrize = draws.reduce((count, draw) => {
-                    return count + draw.winners.filter(w => 
-                      w.prizeId === prize.id && (w.status || 'present') === 'present'
-                    ).length
+                    return count + draw.winners.filter(w => w.prizeId === prize.id).length
                   }, 0)
                   
                   // Calculate remaining winners for this prize
@@ -5693,9 +5715,12 @@ export function LuckyDraw() {
                             })
                           }
                           
-                          // Remove all winners from entries list
+                          // Remove all winners from entries list (if not already removed in automatic draw mode)
                           const allWinnerIds = new Set(allWinners.map(w => w.entry.id))
                           setEntries(prevEntries => prevEntries.filter(e => !allWinnerIds.has(e.id)))
+                          
+                          // Refresh entries from server to ensure sync with database
+                          await fetchEntries()
                         }
                         
                         stopModalMusic()
@@ -5713,6 +5738,9 @@ export function LuckyDraw() {
                         // Start shuffling
                         setIsShuffling(true)
                         await fetchDraws()
+                        
+                        // Refresh entries again after fetchDraws to ensure latest state
+                        await fetchEntries()
                         
                         // Ensure we stay on main view
                         if (currentView !== "main") {
