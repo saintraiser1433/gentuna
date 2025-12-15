@@ -1,0 +1,26 @@
+# Deployment Checklist
+
+## Before Transferring:
+- [ ] Run 'npm run build:portable' on source PC
+- [ ] Verify the package was created successfully
+- [ ] Check that all files are in dist-portable/lucky-draw-system/
+
+## On Target PC:
+- [ ] Install Node.js 18+ (if not already installed)
+- [ ] Copy the entire 'lucky-draw-system' folder
+- [ ] Navigate to the folder in terminal
+- [ ] Run 'start.bat' (Windows) or './start.sh' (Linux/Mac)
+- [ ] Open http://localhost:3000 in browser
+
+## If Issues Occur:
+- [ ] Check Node.js version: node --version (should be 18+)
+- [ ] Check if port 3000 is available
+- [ ] Verify all files were copied (especially .next/standalone and .next/static)
+- [ ] Check terminal for error messages
+- [ ] Ensure database directory (prisma/) exists and is writable
+
+## Important Notes:
+- The database (prisma/dev.db) will be created automatically on first run
+- Do NOT delete the .next/standalone or .next/static folders
+- Do NOT delete the node_modules/.prisma folder (if included)
+- The application requires Node.js to run (not a standalone executable)

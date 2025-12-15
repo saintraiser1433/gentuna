@@ -1,0 +1,16 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/draw-settings/route": "/api/draw-settings",
+  "/api/draws/[id]/export/route": "/api/draws/[id]/export",
+  "/api/draws/[id]/route": "/api/draws/[id]",
+  "/api/draws/route": "/api/draws",
+  "/api/entries/[id]/route": "/api/entries/[id]",
+  "/api/entries/route": "/api/entries",
+  "/api/prizes/[id]/route": "/api/prizes/[id]",
+  "/api/prizes/route": "/api/prizes",
+  "/api/upload-sound/route": "/api/upload-sound",
+  "/api/winners/[id]/route": "/api/winners/[id]",
+  "/favicon.ico/route": "/favicon.ico",
+  "/page": "/"
+}
