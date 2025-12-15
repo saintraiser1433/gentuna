@@ -598,7 +598,8 @@ export function LuckyDraw() {
   const [prizeLoading, setPrizeLoading] = useState(false)
   
   // Form state
-  const [excludePrevious] = useState(false)
+  // Always exclude previous winners - once someone wins, they're out of the pool
+  const [excludePrevious] = useState(true)
   const [bulkEntries, setBulkEntries] = useState("")
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, percentage: 0 })
@@ -721,6 +722,36 @@ export function LuckyDraw() {
     // Filter out entries that are winners
     return entries.filter(entry => !winnerIds.has(entry.id))
   }, [entries, draws])
+
+  // Calculate total remaining winners across all prizes (for button enable/disable logic)
+  const totalRemainingWinners = useMemo(() => {
+    if (prizes.length === 0 || prizeAssignments.length === 0) {
+      return 0
+    }
+
+    const validPrizeIds = new Set(prizes.map(p => p.id))
+    const validAssignments = prizeAssignments.filter(
+      a => a.prizeId && a.prizeId.trim() !== "" && a.count > 0 && validPrizeIds.has(a.prizeId)
+    )
+
+    let total = 0
+    for (const assignment of validAssignments) {
+      const prize = prizes.find(p => p.id === assignment.prizeId)
+      if (!prize) continue
+
+      // Calculate how many winners have been drawn for this prize
+      const drawnWinnersForPrize = draws.reduce((count, draw) => {
+        return count + draw.winners.filter(w => w.prizeId === prize.id).length
+      }, 0)
+
+      const remainingForPrize = assignment.count - drawnWinnersForPrize
+      if (remainingForPrize > 0) {
+        total += remainingForPrize
+      }
+    }
+
+    return total
+  }, [prizes, prizeAssignments, draws])
 
   // Export winners by status to Excel or PDF
   const handleExportWinnersByStatus = (status: "present" | "not_present", format: "excel" | "pdf") => {
@@ -1038,8 +1069,14 @@ export function LuckyDraw() {
 
   // Restore draw progress based on remaining winners (ascending order of prizes)
   useEffect(() => {
-    // Only restore if we have prizes, assignments, and draws loaded
-    if (prizes.length === 0 || prizeAssignments.length === 0 || draws.length === 0) {
+    // Don't restore if currently drawing
+    if (drawing) {
+      return
+    }
+    
+    // Only restore if we have prizes and assignments loaded
+    // Allow restoration even if draws.length === 0 (for first draw)
+    if (prizes.length === 0 || prizeAssignments.length === 0) {
       return
     }
     
@@ -1143,43 +1180,66 @@ export function LuckyDraw() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prizes.length]) // Only run when number of prizes changes
 
-  // Initialize prize state when prize assignments are loaded (on page refresh)
+  // Initialize prize state when prize assignments change (e.g., new prize added)
+  // This only runs if the restore useEffect didn't already set the state
   useEffect(() => {
-    // Only initialize if not currently drawing and state is not set
-    if (!isDrawingInProgress && prizes.length > 0 && prizeAssignments.length > 0) {
-      // Filter valid assignments and sort by prize order (ascending)
-      const validPrizeIds = new Set(prizes.map(p => p.id))
-      const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
-      
-      const filteredAssignments = prizeAssignments
-        .filter(a => 
-        a.prizeId && 
-        a.prizeId.trim() !== "" && 
-        a.count > 0 &&
-        validPrizeIds.has(a.prizeId)
-      )
-        .sort((a, b) => {
-          const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
-          const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
-          return indexA - indexB // Ascending order
-        })
-      
-      // If we have valid assignments but prize state is not initialized
-      if (filteredAssignments.length > 0 && (remainingWinners === 0 || currentPrizeName === "")) {
-        // Initialize to first prize (lowest index with count > 0)
-        const firstAssignment = filteredAssignments[0]
-        const firstPrize = prizes.find(p => p.id === firstAssignment.prizeId)
+    // Only initialize if not currently drawing, not in the middle of a draw, state is not set, and we have all required data
+    // Allow initialization even if draws.length === 0 (for first draw)
+    if (!isDrawingInProgress && !drawing && prizes.length > 0 && prizeAssignments.length > 0) {
+      // Only run if state is not initialized (remainingWinners is 0 and no current prize name)
+      if (remainingWinners === 0 && currentPrizeName === "") {
+        // Filter valid assignments and sort by prize order (ascending)
+        const validPrizeIds = new Set(prizes.map(p => p.id))
+        const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
         
-        if (firstPrize) {
-          setCurrentPrizeIndex(0)
-          setCurrentPrizeWinnerCount(0)
-          setRemainingWinners(firstAssignment.count)
-          setCurrentPrizeName(firstPrize.name)
+        const filteredAssignments = prizeAssignments
+          .filter(a => 
+          a.prizeId && 
+          a.prizeId.trim() !== "" && 
+          a.count > 0 &&
+          validPrizeIds.has(a.prizeId)
+        )
+          .sort((a, b) => {
+            const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
+            const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
+            return indexA - indexB // Ascending order
+          })
+        
+        // Find the first prize with ACTUAL remaining winners (accounting for already drawn winners)
+        for (let i = 0; i < filteredAssignments.length; i++) {
+          const assignment = filteredAssignments[i]
+          const prize = prizes.find(p => p.id === assignment.prizeId)
+          if (!prize) continue
+          
+          // Calculate how many winners have been drawn for this prize
+          // Count ALL winners (both "present" and "not_present") towards the prize limit
+          const drawnWinnersForPrize = draws.reduce((count, draw) => {
+            return count + draw.winners.filter(w => w.prizeId === prize.id).length
+          }, 0)
+          
+          const remainingForPrize = assignment.count - drawnWinnersForPrize
+          
+          if (remainingForPrize > 0) {
+            // Found a prize with remaining winners - initialize to this prize
+            setCurrentPrizeIndex(i)
+            setCurrentPrizeWinnerCount(drawnWinnersForPrize)
+            setRemainingWinners(remainingForPrize)
+            setCurrentPrizeName(prize.name)
+            setIsDrawingInProgress(true) // Mark as in progress since there are remaining winners
+            return
+          }
         }
+        
+        // No prizes with remaining winners found - reset state
+        setCurrentPrizeIndex(0)
+        setCurrentPrizeWinnerCount(0)
+        setRemainingWinners(0)
+        setCurrentPrizeName("")
+        setIsDrawingInProgress(false)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prizeAssignments.length, prizes.length]) // Run when prize assignments or prizes change
+  }, [prizeAssignments.length, prizes.length, draws.length]) // Run when prize assignments, prizes, or draws change
 
   // Animation refs - never reset, always continuous
   const animationRef = useRef<number | null>(null)
@@ -1485,9 +1545,18 @@ export function LuckyDraw() {
     
     const itemsToRender: JSX.Element[] = []
     
+    // When there are few entries, limit the visible range to show only unique entries
+    // This prevents showing duplicates (e.g., 2 entries creating 3 visible items)
+    let adjustedEndIndex = endIndex
+    if (baseEntriesLength <= 3) {
+      // Show only one complete cycle of entries (baseEntriesLength items)
+      // This ensures we see all entries rotating, not duplicates
+      adjustedEndIndex = Math.min(startIndex + baseEntriesLength, endIndex)
+    }
+    
     // Render items in visible range (with wrapping) - limit to reasonable range
-    const maxItems = Math.min(endIndex - startIndex, 50) // Cap at 50 items max
-    for (let i = startIndex; i <= startIndex + maxItems && i <= endIndex; i++) {
+    const maxItems = Math.min(adjustedEndIndex - startIndex, 50) // Cap at 50 items max
+    for (let i = startIndex; i <= startIndex + maxItems && i <= adjustedEndIndex; i++) {
       // For shuffled entries (extended array), use modulo with entriesToUse.length
       // For original entries, use modulo with baseEntriesLength
       const entryIndex = isShuffling && shuffledEntries.length > 0 
@@ -1905,6 +1974,47 @@ export function LuckyDraw() {
     }
   }
 
+  // Check for duplicate prizes
+  const checkDuplicatePrizes = (newPrizes: Array<{ name: string }>): {
+    hasDuplicates: boolean
+    duplicateNames: string[]
+    existingDuplicates: string[]
+  } => {
+    const existingNormalized = new Set(prizes.map(p => normalizeName(p.name)))
+    const newNormalized = new Map<string, string>() // normalized -> original
+    const duplicateNames: string[] = []
+    const existingDuplicates: string[] = []
+
+    // Check for duplicates within new prizes
+    for (const prize of newPrizes) {
+      if (!prize.name.trim()) continue
+      
+      const normalized = normalizeName(prize.name)
+      
+      // Check if duplicate within new prizes
+      if (newNormalized.has(normalized)) {
+        if (!duplicateNames.includes(prize.name)) {
+          duplicateNames.push(prize.name)
+        }
+      } else {
+        newNormalized.set(normalized, prize.name)
+      }
+      
+      // Check if duplicate with existing prizes
+      if (existingNormalized.has(normalized)) {
+        if (!existingDuplicates.includes(prize.name)) {
+          existingDuplicates.push(prize.name)
+        }
+      }
+    }
+
+    return {
+      hasDuplicates: duplicateNames.length > 0 || existingDuplicates.length > 0,
+      duplicateNames,
+      existingDuplicates,
+    }
+  }
+
   // Parse CSV line - extract name from CSV format
   // Unused CSV parser function - kept for potential future use
   // const parseCSVLine = (line: string): { name: string } => {
@@ -1931,6 +2041,30 @@ export function LuckyDraw() {
   //     name: parts[0] || line.trim(),
   //   }
   // }
+
+  // Parse bulk prizes text - extract names
+  const parseBulkPrizes = (text: string): Array<{ name: string }> => {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+    
+    return lines.map(line => {
+      // Handle CSV format (comma-separated)
+      if (line.includes(',')) {
+        const parts = line.split(',').map(p => p.trim())
+        // Use first column as name
+        return { name: parts[0] || line.trim() }
+      }
+      
+      // Handle TSV format (tab-separated)
+      if (line.includes('\t')) {
+        const parts = line.split('\t').map(p => p.trim())
+        // Use first column as name
+        return { name: parts[0] || line.trim() }
+      }
+      
+      // Simple format: just name (no commas or tabs)
+      return { name: line.trim() }
+    })
+  }
 
   // Parse bulk entries text - extract names
   const parseBulkEntries = (text: string): Array<{ name: string }> => {
@@ -2087,6 +2221,180 @@ export function LuckyDraw() {
     } catch (error) {
       console.error("Error importing file:", error)
       toast.error("Failed to import file. Please ensure it's a valid CSV or text file.")
+      setShowImportProgress(false)
+      setImporting(false)
+    } finally {
+      // Reset file input
+      e.target.value = ""
+    }
+  }
+
+  // Handle Excel/CSV file import for prizes
+  const handlePrizeFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    setShowImportProgress(true)
+    setImportProgress({ current: 0, total: 0, percentage: 0 })
+
+    try {
+      let text = ""
+      
+      // Handle Excel files (.xlsx, .xls)
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        try {
+          const arrayBuffer = await file.arrayBuffer()
+          const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+          const firstSheetName = workbook.SheetNames[0]
+          const worksheet = workbook.Sheets[firstSheetName]
+          const data = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
+          
+          // Convert to text format (one prize per line, first column)
+          text = data
+            .map((row: any) => {
+              if (Array.isArray(row) && row.length > 0) {
+                return String(row[0] || '').trim()
+              }
+              return ''
+            })
+            .filter(line => line.length > 0)
+            .join('\n')
+        } catch (excelError) {
+          console.error("Error reading Excel file:", excelError)
+          toast.error("Failed to read Excel file. Please ensure it's a valid .xlsx or .xls file.")
+          setShowImportProgress(false)
+          setImporting(false)
+          e.target.value = ""
+          return
+        }
+      } else {
+        // Handle CSV/TXT files
+        text = await file.text()
+      }
+      
+      // Skip header row if it looks like a header (contains "name")
+      const lines = text.split('\n')
+      if (lines.length > 0) {
+        const firstLine = lines[0].toLowerCase()
+        if (firstLine.includes('name')) {
+          text = lines.slice(1).join('\n')
+        }
+      }
+      
+      const parsed = parseBulkPrizes(text)
+      const validPrizes = parsed.filter(p => p.name && p.name.trim())
+      
+      if (validPrizes.length === 0) {
+        toast.warning("No valid prizes found in the file")
+        setShowImportProgress(false)
+        setImporting(false)
+        return
+      }
+
+      // Check for duplicates within the file (prevent importing same prize twice in one import)
+      const duplicateCheck = checkDuplicatePrizes(validPrizes)
+      
+      // Only block if there are duplicates within the file itself
+      // Allow importing prizes that already exist (they will be skipped by the API)
+      if (duplicateCheck.duplicateNames.length > 0) {
+        let message = "Duplicate prizes detected within the file:\n"
+        message += `${duplicateCheck.duplicateNames.join(", ")}`
+        message += "\n\nPlease remove duplicates from the file before importing."
+        toast.error(message)
+        setShowImportProgress(false)
+        setImporting(false)
+        return
+      }
+      
+      // Warn about existing prizes but allow import to continue
+      if (duplicateCheck.existingDuplicates.length > 0) {
+        toast.warning(`${duplicateCheck.existingDuplicates.length} prize(s) already exist and will be skipped: ${duplicateCheck.existingDuplicates.slice(0, 5).join(", ")}${duplicateCheck.existingDuplicates.length > 5 ? "..." : ""}`)
+      }
+
+      // Initialize progress
+      const totalPrizes = validPrizes.length
+      setImportProgress({ current: 0, total: totalPrizes, percentage: 0 })
+
+      let successCount = 0
+      let errorCount = 0
+      let skippedCount = 0
+
+      // Filter out prizes that already exist to avoid unnecessary API calls
+      const existingNormalized = new Set(prizes.map(p => normalizeName(p.name)))
+      const prizesToImport = validPrizes.filter(p => {
+        const normalized = normalizeName(p.name)
+        if (existingNormalized.has(normalized)) {
+          skippedCount++
+          return false
+        }
+        return true
+      })
+
+      // Import prizes with progress tracking
+      for (let i = 0; i < prizesToImport.length; i++) {
+        const prize = prizesToImport[i]
+        if (!prize.name) continue
+        
+        try {
+          const res = await fetch("/api/prizes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: prize.name,
+            }),
+          })
+
+          if (res.ok) {
+            successCount++
+          } else {
+            // Try to get error message from API
+            try {
+              const errorData = await res.json()
+              console.error(`Failed to import prize "${prize.name}":`, errorData.error || "Unknown error")
+            } catch {
+              console.error(`Failed to import prize "${prize.name}": HTTP ${res.status}`)
+            }
+            errorCount++
+          }
+        } catch (error) {
+          console.error(`Error importing prize "${prize.name}":`, error)
+          errorCount++
+        }
+        
+        // Update progress based on total prizes (including skipped)
+        const current = i + 1 + skippedCount
+        const percentage = Math.round((current / totalPrizes) * 100)
+        setImportProgress({ current, total: totalPrizes, percentage })
+        
+        // Small delay to allow UI to update (optional, can be removed for faster import)
+        if (i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 10))
+        }
+      }
+      
+      // Update progress to show all prizes processed
+      setImportProgress({ current: totalPrizes, total: totalPrizes, percentage: 100 })
+
+      await fetchPrizes()
+      
+      // Hide progress after a brief delay
+      setTimeout(() => {
+        setShowImportProgress(false)
+        setImporting(false)
+      }, 500)
+      
+      if (errorCount > 0) {
+        toast.warning(`Imported ${successCount} prizes. ${errorCount} failed.${skippedCount > 0 ? ` ${skippedCount} skipped (already exist).` : ''} Check console for details.`)
+      } else if (skippedCount > 0) {
+        toast.success(`Successfully imported ${successCount} prizes. ${skippedCount} skipped (already exist).`)
+      } else {
+        toast.success(`Successfully imported ${successCount} prizes!`)
+      }
+    } catch (error) {
+      console.error("Error importing file:", error)
+      const errorMessage = error instanceof Error ? error.message : "Unknown error"
+      toast.error(`Failed to import file: ${errorMessage}. Please ensure it's a valid CSV, TXT, or Excel file.`)
       setShowImportProgress(false)
       setImporting(false)
     } finally {
@@ -2324,7 +2632,8 @@ export function LuckyDraw() {
       
       if (prizeBulkEnabled && remainingForThisPrize > 1) {
         // Bulk mode: Draw winners
-        const numToDraw = Math.min(remainingForThisPrize, entries.length)
+        // Restrict to available entries (exclude previous winners)
+        const numToDraw = Math.min(remainingForThisPrize, availableEntries.length)
         
         if (numToDraw < 1) {
           toast.warning("Not enough entries or remaining winners for bulk draw")
@@ -2373,8 +2682,8 @@ export function LuckyDraw() {
             drawnWinners.push(allWinners[i])
           }
           
-          // Refresh entries from server to ensure sync with database
-          await fetchEntries()
+          // Update draws to get latest state (which will update availableEntries via memo)
+          await fetchDraws()
           
           // Get the reveal delay (default to 3 seconds)
           const revealDelaySeconds = currentAssignment?.autoDrawDelay || 3
@@ -2527,17 +2836,8 @@ export function LuckyDraw() {
         } else {
           // One by one mode: Draw winners one by one with full animation for each
           // Start spinning sound once at the beginning for the entire bulk draw
-          // Calculate available entries for sound initialization
-          let availableEntriesForSound = entries.length
-          if (excludePrevious) {
-            const previousWinnerIds = new Set<string>()
-            draws.forEach(draw => {
-              draw.winners.forEach(winner => {
-                previousWinnerIds.add(winner.entry.id)
-              })
-            })
-            availableEntriesForSound = entries.filter(e => !previousWinnerIds.has(e.id)).length
-          }
+          // Use availableEntries length directly (already excludes previous winners)
+          const availableEntriesForSound = availableEntries.length
           startSpinningSound(15000, availableEntriesForSound, rouletteType)
           
           for (let i = 0; i < numToDraw; i++) {
@@ -3775,11 +4075,11 @@ export function LuckyDraw() {
                           : `${settings?.verticalRouletteHeight || 500}px`
                       }}
                     >
-                      {entries.length === 0 ? (
+                      {availableEntries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
-                          <p className="text-lg font-medium">Add entries to start the draw</p>
-                          <p className="text-sm mt-2">Your lucky winners will appear here!</p>
+                          <p className="text-lg font-medium">No entries available</p>
+                          <p className="text-sm mt-2">All entries have been drawn as winners.</p>
                         </div>
                       ) : (
                         <div 
@@ -3841,9 +4141,9 @@ export function LuckyDraw() {
                     ]
                     
                     let arrowColor = '#eab308' // Default yellow
-                    if (entries.length > 0) {
+                    if (availableEntries.length > 0) {
                       // Use the EXACT same calculation as in checkEntryPassed for wheel roulette (hooks/use-sound.ts line 446-459)
-                      const anglePerSegment = 360 / entries.length
+                      const anglePerSegment = 360 / availableEntries.length
                       // Use wheel-specific animation offset
                       const currentWheelOffset = rouletteType === "wheel" ? wheelAnimationOffset : 0
                       const normalizedAngle = ((currentWheelOffset % 360) + 360) % 360
@@ -3856,8 +4156,8 @@ export function LuckyDraw() {
                       const segmentCenterOffset = 90 - (anglePerSegment / 2)
                       const targetAngle = (segmentCenterOffset - normalizedAngle + 360) % 360
                       const entryFloat = targetAngle / anglePerSegment
-                      let currentSegmentIndex = Math.floor(entryFloat + 0.5) % entries.length
-                      if (currentSegmentIndex < 0) currentSegmentIndex += entries.length
+                      let currentSegmentIndex = Math.floor(entryFloat + 0.5) % availableEntries.length
+                      if (currentSegmentIndex < 0) currentSegmentIndex += availableEntries.length
                       
                       // Get color from the current segment
                       // Use the same color array and indexing as wheel rendering
@@ -3876,11 +4176,11 @@ export function LuckyDraw() {
                           overflow: isFullscreen ? 'visible' : undefined
                         }}
                       >
-                      {entries.length === 0 ? (
+                      {availableEntries.length === 0 ? (
                         <div className="text-center text-muted-foreground py-12">
                           <Sparkles className="size-16 mx-auto mb-4 opacity-30" />
-                          <p className="text-lg font-medium">Add entries to start the draw</p>
-                          <p className="text-sm mt-2">Your lucky winners will appear here!</p>
+                          <p className="text-lg font-medium">No entries available</p>
+                          <p className="text-sm mt-2">All entries have been drawn as winners.</p>
                         </div>
                       ) : (
                           <>
@@ -3984,10 +4284,10 @@ export function LuckyDraw() {
                         }}
                         disabled={
                           drawing || 
-                          entries.length === 0 || 
+                          availableEntries.length === 0 || 
                           prizes.length === 0 ||
-                          (!isDrawingInProgress && (prizeAssignments.length === 0 ||
-                          prizeAssignments.filter(a => a.prizeId && a.prizeId.trim() !== "" && a.count > 0).length === 0))
+                          totalRemainingWinners === 0 ||
+                          prizeAssignments.filter(a => a.prizeId && a.prizeId.trim() !== "" && a.count > 0).length === 0
                         }
                         className={`w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold ${isFullscreen ? 'py-2 text-sm' : 'py-4 text-base'} disabled:opacity-50 disabled:cursor-not-allowed`}
                         size="lg"
@@ -4326,6 +4626,25 @@ export function LuckyDraw() {
                 )}
               </div>
             </form>
+
+            {/* Excel/CSV Import */}
+            <div className="mb-4 p-3 border rounded-lg bg-muted/50">
+              <Label htmlFor="prizeFileImport" className="mb-1 block font-semibold text-sm">
+                <Upload className="size-4 inline mr-2" />
+                Import Prizes from Excel/CSV
+              </Label>
+              <Input
+                id="prizeFileImport"
+                type="file"
+                accept=".csv,.txt,.xlsx,.xls"
+                onChange={handlePrizeFileImport}
+                disabled={importing}
+                className="mb-1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Supported formats: CSV, TXT, Excel (.xlsx, .xls). Only the first column will be used as the prize name.
+              </p>
+            </div>
 
             {/* Prizes List */}
             <PrizesTable prizes={prizes} onEdit={handleEditPrize} onDelete={handleDeletePrize} onBulkDelete={handleBulkDeletePrizes} />
@@ -5719,8 +6038,8 @@ export function LuckyDraw() {
                           const allWinnerIds = new Set(allWinners.map(w => w.entry.id))
                           setEntries(prevEntries => prevEntries.filter(e => !allWinnerIds.has(e.id)))
                           
-                          // Refresh entries from server to ensure sync with database
-                          await fetchEntries()
+                          // fetchDraws() will update the draws state, which will update availableEntries via memo
+                          // No need to fetchEntries() as we've already filtered winners from local state
                         }
                         
                         stopModalMusic()
@@ -5737,10 +6056,8 @@ export function LuckyDraw() {
                         
                         // Start shuffling
                         setIsShuffling(true)
+                        // fetchDraws() will update the draws state, which will update availableEntries via memo
                         await fetchDraws()
-                        
-                        // Refresh entries again after fetchDraws to ensure latest state
-                        await fetchEntries()
                         
                         // Ensure we stay on main view
                         if (currentView !== "main") {

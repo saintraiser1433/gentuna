@@ -43,3 +43,6 @@ next-env.d.ts
 # PM2 logs
 logs/
 *.log
+
+# Portable distribution package
+dist-portable/
