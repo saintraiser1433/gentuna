@@ -80,6 +80,7 @@ function EntriesTable({ entries, onDelete, onEdit, onBulkDelete }: { entries: En
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState("")
 
   // Reset to page 1 when page size changes
   const prevPageSizeRef = React.useRef(pageSize)
@@ -90,9 +91,27 @@ function EntriesTable({ entries, onDelete, onEdit, onBulkDelete }: { entries: En
     }
   }, [pageSize])
 
-  const totalPages = Math.ceil(entries.length / pageSize)
+  // Reset to page 1 when search changes
+  const prevSearchRef = React.useRef(search)
+  React.useEffect(() => {
+    if (prevSearchRef.current !== search) {
+      prevSearchRef.current = search
+      setCurrentPage(1)
+    }
+  }, [search])
+
+  // Filter entries based on search
+  const filteredEntries = useMemo(() => {
+    if (!search.trim()) return entries
+    const searchLower = search.toLowerCase()
+    return entries.filter(entry => 
+      entry.name.toLowerCase().includes(searchLower)
+    )
+  }, [entries, search])
+
+  const totalPages = Math.ceil(filteredEntries.length / pageSize)
   const startIndex = (currentPage - 1) * pageSize
-  const paginatedEntries = entries.slice(startIndex, startIndex + pageSize)
+  const paginatedEntries = filteredEntries.slice(startIndex, startIndex + pageSize)
   const allSelected = paginatedEntries.length > 0 && paginatedEntries.every(entry => selectedEntries.has(entry.id))
   const someSelected = paginatedEntries.some(entry => selectedEntries.has(entry.id))
 
@@ -134,8 +153,42 @@ function EntriesTable({ entries, onDelete, onEdit, onBulkDelete }: { entries: En
     )
   }
 
+  if (filteredEntries.length === 0 && search.trim() !== "") {
+    return (
+      <div className="space-y-4">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search entries..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Users className="size-12 text-muted-foreground mb-4" />
+          <p className="text-muted-foreground">No entries found matching "{search}"</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder="Search entries..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
       {onBulkDelete && selectedEntries.size > 0 && (
         <div className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg">
           <span className="text-sm font-medium text-red-700">
@@ -295,6 +348,7 @@ function PrizesTable({
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [selectedPrizes, setSelectedPrizes] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState("")
 
   // Reset to page 1 when page size changes
   const prevPageSizeRef = React.useRef(pageSize)
@@ -304,6 +358,25 @@ function PrizesTable({
       setCurrentPage(1)
     }
   }, [pageSize])
+
+  // Reset to page 1 when search changes
+  const prevSearchRef = React.useRef(search)
+  React.useEffect(() => {
+    if (prevSearchRef.current !== search) {
+      prevSearchRef.current = search
+      setCurrentPage(1)
+    }
+  }, [search])
+
+  // Filter prizes based on search
+  const filteredPrizes = useMemo(() => {
+    if (!search.trim()) return prizes
+    const searchLower = search.toLowerCase()
+    return prizes.filter(prize => 
+      prize.name.toLowerCase().includes(searchLower) ||
+      prize.description?.toLowerCase().includes(searchLower)
+    )
+  }, [prizes, search])
 
   // Color palette for prize circles
   const prizeColors = [
@@ -323,9 +396,9 @@ function PrizesTable({
     return prizeColors[index % prizeColors.length]
   }
 
-  const totalPages = Math.ceil(prizes.length / pageSize)
+  const totalPages = Math.ceil(filteredPrizes.length / pageSize)
   const startIndex = (currentPage - 1) * pageSize
-  const paginatedPrizes = prizes.slice(startIndex, startIndex + pageSize)
+  const paginatedPrizes = filteredPrizes.slice(startIndex, startIndex + pageSize)
   const allSelected = paginatedPrizes.length > 0 && paginatedPrizes.every(prize => selectedPrizes.has(prize.id))
   const someSelected = paginatedPrizes.some(prize => selectedPrizes.has(prize.id))
 
@@ -367,8 +440,42 @@ function PrizesTable({
     )
   }
 
+  if (filteredPrizes.length === 0 && search.trim() !== "") {
+    return (
+      <div className="space-y-4">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search prizes..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Gift className="size-12 text-muted-foreground mb-4" />
+          <p className="text-muted-foreground">No prizes found matching "{search}"</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder="Search prizes..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
       {onBulkDelete && selectedPrizes.size > 0 && (
         <div className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg">
           <span className="text-sm font-medium text-red-700">
@@ -519,7 +626,7 @@ function PrizesTable({
 }
 
 export function LuckyDraw() {
-  const { startSpinningSound, stopSpinningSound, updateSpinSpeed, checkEntryPassed, playModalMusic, stopModalMusic } = useSound()
+  const { startSpinningSound, stopSpinningSound, updateSpinSpeed, checkEntryPassed, playModalMusic, stopModalMusic, playDefaultTickSound } = useSound()
   const [currentView, setCurrentView] = useState<View>("main")
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [entries, setEntries] = useState<Entry[]>([])
@@ -618,13 +725,14 @@ export function LuckyDraw() {
   const [, setBulkWinnersList] = useState<Array<{ id: string; entry: Entry; prizeId?: string; position: number }>>([])
   const [revealDelay, setRevealDelay] = useState(3) // seconds
   const [spinTime, setSpinTime] = useState(5) // seconds - animation duration
-  const rouletteSpeed = 100 // Fixed speed for idle animation (not configurable)
+  const rouletteSpeed = settings?.verticalRouletteIdleSpeed ?? 100 // Configurable idle spin speed
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
   const [pendingEntryCount, setPendingEntryCount] = useState(0)
   const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null)
   const [pendingDeleteEntryName, setPendingDeleteEntryName] = useState<string>("")
   const [pendingBulkDeleteEntryIds, setPendingBulkDeleteEntryIds] = useState<string[]>([])
   const [showBulkDeleteEntryConfirmDialog, setShowBulkDeleteEntryConfirmDialog] = useState(false)
+  const [showDeleteAllEntriesConfirmDialog, setShowDeleteAllEntriesConfirmDialog] = useState(false)
   const [showDeletePrizeConfirmDialog, setShowDeletePrizeConfirmDialog] = useState(false)
   const [pendingDeletePrizeId, setPendingDeletePrizeId] = useState<string | null>(null)
   const [pendingBulkDeletePrizeIds, setPendingBulkDeletePrizeIds] = useState<string[]>([])
@@ -1055,6 +1163,40 @@ export function LuckyDraw() {
     }
   }, [])
 
+  // Ensure canvas-confetti canvases have correct z-index above overlay
+  useEffect(() => {
+    if (showWinnerModal && showConfetti) {
+      // Find all canvas elements and set their z-index
+      const styleCanvas = () => {
+        const canvases = document.querySelectorAll('canvas')
+        canvases.forEach((canvas) => {
+          // canvas-confetti creates fixed position canvases
+          const computedStyle = window.getComputedStyle(canvas)
+          if (computedStyle.position === 'fixed' || canvas.style.position === 'fixed') {
+            canvas.style.zIndex = '10001'
+            canvas.style.pointerEvents = 'none'
+            canvas.style.top = '0'
+            canvas.style.left = '0'
+          }
+        })
+      }
+      
+      // Style immediately and also after delays to catch dynamically created canvases
+      styleCanvas()
+      const timeout1 = setTimeout(styleCanvas, 100)
+      const timeout2 = setTimeout(styleCanvas, 300)
+      const timeout3 = setTimeout(styleCanvas, 500)
+      const interval = setInterval(styleCanvas, 100)
+      
+      return () => {
+        clearTimeout(timeout1)
+        clearTimeout(timeout2)
+        clearTimeout(timeout3)
+        clearInterval(interval)
+      }
+    }
+  }, [showWinnerModal, showConfetti])
+
   // Save draw progress to localStorage whenever it changes
   useEffect(() => {
     const progress = {
@@ -1099,24 +1241,53 @@ export function LuckyDraw() {
       }
     }
     
+    // Filter valid prize assignments (preserve saved order from drag-and-drop)
+    const validPrizeIds = new Set(prizes.map(p => p.id))
+    
+    const filteredAssignments = prizeAssignments
+      .filter(a => 
+        a.prizeId && 
+        a.prizeId.trim() !== "" && 
+        a.count > 0 &&
+        validPrizeIds.has(a.prizeId)
+      )
+      // Preserve the order from prizeAssignments (set by drag-and-drop in Draw Settings)
+    
+    // If drawing is in progress, find the first prize with remaining winners in the NEW order
+    if (isDrawingInProgress) {
+      // Find the first prize in the new order that has remaining winners
+      for (let i = 0; i < filteredAssignments.length; i++) {
+        const assignment = filteredAssignments[i]
+        const prize = prizes.find(p => p.id === assignment.prizeId)
+        if (!prize) continue
+        
+        // Calculate how many winners have been drawn for this prize
+        const drawnWinnersForPrize = draws.reduce((count, draw) => {
+          return count + draw.winners.filter(w => w.prizeId === prize.id).length
+        }, 0)
+        
+        const remainingForPrize = assignment.count - drawnWinnersForPrize
+        
+        if (remainingForPrize > 0) {
+          // Found the first prize with remaining winners in the new order
+          // Always update to this prize (the first one in the new order with remaining)
+          setCurrentPrizeIndex(i)
+          setCurrentPrizeWinnerCount(drawnWinnersForPrize)
+          setCurrentPrizeName(prize.name)
+          setRemainingWinners(remainingForPrize)
+          return // Found the first prize with remaining, stop looking
+        }
+      }
+      
+      // No prizes with remaining winners found - all prizes are complete
+      setIsDrawingInProgress(false)
+      setCurrentPrizeIndex(0)
+      setCurrentPrizeWinnerCount(0)
+      setCurrentPrizeName("")
+      setRemainingWinners(0)
+    }
+    
     if (shouldRestoreFromDatabase) {
-      // Filter valid prize assignments and sort by prize order (ascending)
-      const validPrizeIds = new Set(prizes.map(p => p.id))
-      const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
-      
-      const filteredAssignments = prizeAssignments
-        .filter(a => 
-          a.prizeId && 
-          a.prizeId.trim() !== "" && 
-          a.count > 0 &&
-          validPrizeIds.has(a.prizeId)
-        )
-        .sort((a, b) => {
-          const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
-          const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
-          return indexA - indexB // Ascending order
-        })
-      
       // Find the first prize with remaining winners
       for (let i = 0; i < filteredAssignments.length; i++) {
         const assignment = filteredAssignments[i]
@@ -1188,9 +1359,8 @@ export function LuckyDraw() {
     if (!isDrawingInProgress && !drawing && prizes.length > 0 && prizeAssignments.length > 0) {
       // Only run if state is not initialized (remainingWinners is 0 and no current prize name)
       if (remainingWinners === 0 && currentPrizeName === "") {
-        // Filter valid assignments and sort by prize order (ascending)
+        // Filter valid assignments (preserve saved order from drag-and-drop)
         const validPrizeIds = new Set(prizes.map(p => p.id))
-        const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
         
         const filteredAssignments = prizeAssignments
           .filter(a => 
@@ -1199,11 +1369,7 @@ export function LuckyDraw() {
           a.count > 0 &&
           validPrizeIds.has(a.prizeId)
         )
-          .sort((a, b) => {
-            const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
-            const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
-            return indexA - indexB // Ascending order
-          })
+          // Preserve the order from prizeAssignments (set by drag-and-drop in Draw Settings)
         
         // Find the first prize with ACTUAL remaining winners (accounting for already drawn winners)
         for (let i = 0; i < filteredAssignments.length; i++) {
@@ -1439,7 +1605,8 @@ export function LuckyDraw() {
         setShuffledWheelEntries(shuffled)
       }
       
-      // Shuffle every 200ms for continuous effect
+      // Shuffle at configurable speed
+      const shuffleSpeed = settings?.shuffleSpeed ?? 200
       shuffleIntervalRef.current = setInterval(() => {
         if (rouletteType === "vertical") {
           // Shuffle for vertical roulette
@@ -1459,7 +1626,7 @@ export function LuckyDraw() {
           }
           setShuffledWheelEntries(shuffled)
         }
-      }, 200) // Shuffle every 200ms
+      }, shuffleSpeed) // Configurable shuffle speed
     } else {
       // Clear interval when not shuffling
       if (shuffleIntervalRef.current) {
@@ -1474,7 +1641,7 @@ export function LuckyDraw() {
         shuffleIntervalRef.current = null
       }
     }
-  }, [isShuffling, entries, rouletteType])
+  }, [isShuffling, entries, rouletteType, settings?.shuffleSpeed])
 
   // Automatically start shuffling when not drawing
   useEffect(() => {
@@ -2469,6 +2636,32 @@ export function LuckyDraw() {
     }
   }
 
+  // Delete all entries
+  const handleDeleteAllEntries = () => {
+    setShowDeleteAllEntriesConfirmDialog(true)
+  }
+
+  const confirmDeleteAllEntries = async () => {
+    try {
+      const res = await fetch("/api/entries", { method: "DELETE" })
+      
+      if (res.ok) {
+        const data = await res.json()
+        await fetchEntries()
+        await fetchDraws() // Refresh draws to update winner counts
+        toast.success(`All ${data.deletedCount || entries.length} entries deleted successfully`)
+      } else {
+        const error = await res.json()
+        toast.error(error.error || "Failed to delete all entries")
+      }
+    } catch (error) {
+      console.error("Error deleting all entries:", error)
+      toast.error("Failed to delete all entries")
+    } finally {
+      setShowDeleteAllEntriesConfirmDialog(false)
+    }
+  }
+
   // Function to enter fullscreen
   const enterFullscreen = async () => {
     try {
@@ -2552,13 +2745,14 @@ export function LuckyDraw() {
       setCurrentPrizeIndex(0)
       setCurrentPrizeWinnerCount(0)
       setAllDrawnWinners([])
+      // Clear currentPrizeName to ensure we start fresh with the first prize in order
+      setCurrentPrizeName("")
     }
 
-    // Get current prize assignment - filter out invalid prize IDs and sort by prize order (ascending)
+    // Get current prize assignment - filter out invalid prize IDs (preserve saved order from drag-and-drop)
     const validPrizeIds = prizes.length > 0 ? new Set(prizes.map(p => p.id)) : new Set<string>()
-    const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
     
-    // Filter and sort assignments by prize order (ascending)
+    // Filter assignments (preserve the order from prizeAssignments set by drag-and-drop in Draw Settings)
     const filteredAssignments = prizeAssignments
       .filter(a => 
       a.prizeId && 
@@ -2566,11 +2760,7 @@ export function LuckyDraw() {
       a.count > 0 &&
       (prizes.length === 0 || validPrizeIds.has(a.prizeId)) // Only check if prizes exist
     )
-      .sort((a, b) => {
-        const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
-        const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
-        return indexA - indexB // Ascending order
-      })
+      // Preserve the order from prizeAssignments (set by drag-and-drop in Draw Settings)
     
     if (filteredAssignments.length === 0) {
       toast.warning("No prizes with winners configured. Please configure draw settings.")
@@ -2578,8 +2768,54 @@ export function LuckyDraw() {
       return
     }
     
-    // Reset to first valid prize if current index is invalid
-    if (currentPrizeIndex >= filteredAssignments.length || currentPrizeIndex < 0) {
+    // If currentPrizeName is empty (new session), start with the first prize in order
+    let currentAssignment = filteredAssignments[currentPrizeIndex]
+    let prize = currentAssignment ? prizes.find(p => p.id === currentAssignment.prizeId) : null
+    
+    if (!currentPrizeName || currentPrizeName.trim() === "") {
+      // New session - use the first prize in the saved order
+      setCurrentPrizeIndex(0)
+      currentAssignment = filteredAssignments[0]
+      prize = prizes.find(p => p.id === currentAssignment.prizeId)
+      if (prize) {
+        setCurrentPrizeName(prize.name)
+        setRemainingWinners(currentAssignment.count)
+        setCurrentPrizeWinnerCount(0)
+      }
+    } else {
+      // Existing session - find current prize by matching currentPrizeName (in case order changed)
+      // This ensures we get the correct prize even if prizeAssignments were reordered
+      
+      // If currentPrizeName is set, try to find the assignment by matching the prize name
+      // This handles the case where prizes were reordered and index might be wrong
+      if (currentPrizeName && currentPrizeName.trim() !== "") {
+      const prizeByName = prizes.find(p => p.name === currentPrizeName)
+      if (prizeByName) {
+        const assignmentByPrizeId = filteredAssignments.find(a => a.prizeId === prizeByName.id)
+        if (assignmentByPrizeId) {
+          const correctIndex = filteredAssignments.indexOf(assignmentByPrizeId)
+          if (correctIndex >= 0 && correctIndex !== currentPrizeIndex) {
+            // Update index to match the correct prize
+            // Also recalculate winner count for the correct prize
+            const drawnWinnersForPrize = draws.reduce((count, draw) => {
+              return count + draw.winners.filter(w => w.prizeId === prizeByName.id).length
+            }, 0)
+            setCurrentPrizeIndex(correctIndex)
+            setCurrentPrizeWinnerCount(drawnWinnersForPrize)
+            currentAssignment = assignmentByPrizeId
+            prize = prizeByName
+          } else if (correctIndex === currentPrizeIndex) {
+            // Index is correct, just update the prize reference
+            prize = prizeByName
+            currentAssignment = assignmentByPrizeId
+          }
+        }
+      }
+      }
+    }
+    
+    // Reset to first valid prize if current index is invalid or assignment not found
+    if (!currentAssignment || currentPrizeIndex >= filteredAssignments.length || currentPrizeIndex < 0) {
       setCurrentPrizeIndex(0)
       const firstAssignment = filteredAssignments[0]
       const firstPrize = prizes.find(p => p.id === firstAssignment.prizeId)
@@ -2588,6 +2824,9 @@ export function LuckyDraw() {
         setRemainingWinners(firstAssignment.count)
         setCurrentPrizeWinnerCount(0)
       }
+      // Recursively call to set up correctly
+      await handleRunDraw()
+      return
     }
     
     if (currentPrizeIndex >= filteredAssignments.length) {
@@ -2596,8 +2835,6 @@ export function LuckyDraw() {
       return
     }
 
-    const currentAssignment = filteredAssignments[currentPrizeIndex]
-    const prize = prizes.find(p => p.id === currentAssignment.prizeId)
     const prizeName = prize?.name || "Prize"
     const remainingForThisPrize = currentAssignment.count - currentPrizeWinnerCount
 
@@ -2692,14 +2929,20 @@ export function LuckyDraw() {
           setShowAutoDrawOverlay(true)
           setAutoDrawCountdown(revealDelaySeconds)
           
-          // Countdown timer
+          // Countdown timer with sound
           let countdownInterval: NodeJS.Timeout | null = null
+          // Play sound immediately for the initial countdown number
+          playDefaultTickSound()
           countdownInterval = setInterval(() => {
             setAutoDrawCountdown((prev) => {
               if (prev <= 1) {
                 if (countdownInterval) clearInterval(countdownInterval)
+                // Play final tick sound when countdown reaches 0
+                playDefaultTickSound()
                 return 0
               }
+              // Play tick sound for each countdown number
+              playDefaultTickSound()
               return prev - 1
             })
           }, 1000)
@@ -2740,37 +2983,86 @@ export function LuckyDraw() {
             // Play modal music
             playModalMusic()
             
-            // Trigger confetti effect
-            const duration = 3000
-            const animationEnd = Date.now() + duration
-            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 }
-            
-            function randomInRange(min: number, max: number) {
-              return Math.random() * (max - min) + min
+            // Trigger confetti effect: 5 side cannon shots and 4 fireworks
+            // Fire 5 side cannon confetti shots
+            for (let i = 0; i < 5; i++) {
+              setTimeout(() => {
+                // Left side cannon
+                confetti({
+                  particleCount: 100,
+                  angle: 60,
+                  spread: 55,
+                  origin: { x: 0, y: 0.8 },
+                  colors: ['#ff0a54', '#ff477e', '#ff7096', '#ff85a1', '#fbb1bd', '#ffd23f', '#06ffa5', '#4ecdc4', '#45b7d1', '#96ceb4'],
+                  zIndex: 10001
+                })
+                // Right side cannon
+                confetti({
+                  particleCount: 100,
+                  angle: 120,
+                  spread: 55,
+                  origin: { x: 1, y: 0.8 },
+                  colors: ['#ff0a54', '#ff477e', '#ff7096', '#ff85a1', '#fbb1bd', '#ffd23f', '#06ffa5', '#4ecdc4', '#45b7d1', '#96ceb4'],
+                  zIndex: 10001
+                })
+              }, i * 200) // 200ms interval between shots
             }
             
-            const interval = setInterval(function() {
-              const timeLeft = animationEnd - Date.now()
-              
-              if (timeLeft <= 0) {
-                clearInterval(interval)
-                setShowConfetti(false)
-                return
-              }
-              
-              const particleCount = 50 * (timeLeft / duration)
-              
-              confetti({
-                ...defaults,
-                particleCount,
-                origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
-              })
-              confetti({
-                ...defaults,
-                particleCount,
-                origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
-              })
-            }, 250)
+            // Fire 4 fireworks
+            const fireworkPositions = [
+              { x: 0.2, y: 0.3 },
+              { x: 0.8, y: 0.3 },
+              { x: 0.5, y: 0.2 },
+              { x: 0.5, y: 0.4 }
+            ]
+            
+            fireworkPositions.forEach((pos, index) => {
+              setTimeout(() => {
+                // Firework burst effect
+                const count = 200
+                const defaults = { startVelocity: 30, spread: 360, ticks: 100, zIndex: 10001 }
+                
+                function fire(particleRatio: number, opts: any) {
+                  confetti({
+                    ...defaults,
+                    origin: pos,
+                    particleCount: Math.floor(count * particleRatio),
+                    ...opts
+                  })
+                }
+                
+                fire(0.25, {
+                  spread: 26,
+                  startVelocity: 55,
+                  colors: ['#ff0a54', '#ff477e', '#ff7096']
+                })
+                fire(0.2, {
+                  spread: 60,
+                  colors: ['#ffd23f', '#06ffa5', '#4ecdc4']
+                })
+                fire(0.35, {
+                  spread: 100,
+                  decay: 0.91,
+                  colors: ['#45b7d1', '#96ceb4', '#ff85a1']
+                })
+                fire(0.1, {
+                  spread: 120,
+                  startVelocity: 25,
+                  decay: 0.92,
+                  colors: ['#ff0a54', '#ffd23f', '#06ffa5']
+                })
+                fire(0.1, {
+                  spread: 120,
+                  startVelocity: 45,
+                  colors: ['#ff477e', '#4ecdc4', '#45b7d1']
+                })
+              }, 1000 + (index * 300)) // Start after 1 second, 300ms between each
+            })
+            
+            // Hide confetti after all effects complete
+            setTimeout(() => {
+              setShowConfetti(false)
+            }, 3000)
             
             // Update prize winner count and find next prize
             setCurrentPrizeWinnerCount(prev => {
@@ -3113,37 +3405,84 @@ export function LuckyDraw() {
           // Play modal music
           playModalMusic()
           
-          // Trigger confetti effect
-          const duration = 3000
-          const animationEnd = Date.now() + duration
-          const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 }
-          
-          function randomInRange(min: number, max: number) {
-            return Math.random() * (max - min) + min
+          // Trigger confetti effect: 5 side cannon shots and 4 fireworks
+          // Fire 5 side cannon confetti shots
+          for (let i = 0; i < 5; i++) {
+            setTimeout(() => {
+              // Left side cannon
+              confetti({
+                particleCount: 100,
+                angle: 60,
+                spread: 55,
+                origin: { x: 0, y: 0.8 },
+                colors: ['#ff0a54', '#ff477e', '#ff7096', '#ff85a1', '#fbb1bd', '#ffd23f', '#06ffa5', '#4ecdc4', '#45b7d1', '#96ceb4']
+              })
+              // Right side cannon
+              confetti({
+                particleCount: 100,
+                angle: 120,
+                spread: 55,
+                origin: { x: 1, y: 0.8 },
+                colors: ['#ff0a54', '#ff477e', '#ff7096', '#ff85a1', '#fbb1bd', '#ffd23f', '#06ffa5', '#4ecdc4', '#45b7d1', '#96ceb4']
+              })
+            }, i * 200) // 200ms interval between shots
           }
           
-          const interval = setInterval(function() {
-            const timeLeft = animationEnd - Date.now()
-            
-            if (timeLeft <= 0) {
-              clearInterval(interval)
-              setShowConfetti(false)
-              return
-            }
-            
-            const particleCount = 50 * (timeLeft / duration)
-            
-            confetti({
-              ...defaults,
-              particleCount,
-              origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
-            })
-            confetti({
-              ...defaults,
-              particleCount,
-              origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
-            })
-          }, 250)
+          // Fire 4 fireworks
+          const fireworkPositions = [
+            { x: 0.2, y: 0.3 },
+            { x: 0.8, y: 0.3 },
+            { x: 0.5, y: 0.2 },
+            { x: 0.5, y: 0.4 }
+          ]
+          
+          fireworkPositions.forEach((pos, index) => {
+            setTimeout(() => {
+              // Firework burst effect
+              const count = 200
+              const defaults = { startVelocity: 30, spread: 360, ticks: 100, zIndex: 10001 }
+              
+              function fire(particleRatio: number, opts: any) {
+                confetti({
+                  ...defaults,
+                  origin: pos,
+                  particleCount: Math.floor(count * particleRatio),
+                  ...opts
+                })
+              }
+              
+              fire(0.25, {
+                spread: 26,
+                startVelocity: 55,
+                colors: ['#ff0a54', '#ff477e', '#ff7096']
+              })
+              fire(0.2, {
+                spread: 60,
+                colors: ['#ffd23f', '#06ffa5', '#4ecdc4']
+              })
+              fire(0.35, {
+                spread: 100,
+                decay: 0.91,
+                colors: ['#45b7d1', '#96ceb4', '#ff85a1']
+              })
+              fire(0.1, {
+                spread: 120,
+                startVelocity: 25,
+                decay: 0.92,
+                colors: ['#ff0a54', '#ffd23f', '#06ffa5']
+              })
+              fire(0.1, {
+                spread: 120,
+                startVelocity: 45,
+                colors: ['#ff477e', '#4ecdc4', '#45b7d1']
+              })
+            }, 1000 + (index * 300)) // Start after 1 second, 300ms between each
+          })
+          
+          // Hide confetti after all effects complete
+          setTimeout(() => {
+            setShowConfetti(false)
+          }, 3000)
           
           // Update prize winner count and find next prize
           setCurrentPrizeWinnerCount(prev => {
@@ -3636,37 +3975,84 @@ export function LuckyDraw() {
       // Play modal music
       playModalMusic()
       
-      // Trigger confetti effect
-      const duration = 3000
-      const animationEnd = Date.now() + duration
-      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 }
-      
-      function randomInRange(min: number, max: number) {
-        return Math.random() * (max - min) + min
+      // Trigger confetti effect: 5 side cannon shots and 4 fireworks
+      // Fire 5 side cannon confetti shots
+      for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+          // Left side cannon
+          confetti({
+            particleCount: 100,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0, y: 0.8 },
+            colors: ['#ff0a54', '#ff477e', '#ff7096', '#ff85a1', '#fbb1bd', '#ffd23f', '#06ffa5', '#4ecdc4', '#45b7d1', '#96ceb4']
+          })
+          // Right side cannon
+          confetti({
+            particleCount: 100,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1, y: 0.8 },
+            colors: ['#ff0a54', '#ff477e', '#ff7096', '#ff85a1', '#fbb1bd', '#ffd23f', '#06ffa5', '#4ecdc4', '#45b7d1', '#96ceb4']
+          })
+        }, i * 200) // 200ms interval between shots
       }
       
-      const interval = setInterval(function() {
-        const timeLeft = animationEnd - Date.now()
-        
-        if (timeLeft <= 0) {
-          clearInterval(interval)
-          setShowConfetti(false)
-          return
-        }
-        
-        const particleCount = 50 * (timeLeft / duration)
-        
-        confetti({
-          ...defaults,
-          particleCount,
-          origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
-        })
-        confetti({
-          ...defaults,
-          particleCount,
-          origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
-        })
-      }, 250)
+      // Fire 4 fireworks
+      const fireworkPositions = [
+        { x: 0.2, y: 0.3 },
+        { x: 0.8, y: 0.3 },
+        { x: 0.5, y: 0.2 },
+        { x: 0.5, y: 0.4 }
+      ]
+      
+      fireworkPositions.forEach((pos, index) => {
+        setTimeout(() => {
+          // Firework burst effect
+          const count = 200
+          const defaults = { startVelocity: 30, spread: 360, ticks: 100, zIndex: 9999 }
+          
+          function fire(particleRatio: number, opts: any) {
+            confetti({
+              ...defaults,
+              origin: pos,
+              particleCount: Math.floor(count * particleRatio),
+              ...opts
+            })
+          }
+          
+          fire(0.25, {
+            spread: 26,
+            startVelocity: 55,
+            colors: ['#ff0a54', '#ff477e', '#ff7096']
+          })
+          fire(0.2, {
+            spread: 60,
+            colors: ['#ffd23f', '#06ffa5', '#4ecdc4']
+          })
+          fire(0.35, {
+            spread: 100,
+            decay: 0.91,
+            colors: ['#45b7d1', '#96ceb4', '#ff85a1']
+          })
+          fire(0.1, {
+            spread: 120,
+            startVelocity: 25,
+            decay: 0.92,
+            colors: ['#ff0a54', '#ffd23f', '#06ffa5']
+          })
+          fire(0.1, {
+            spread: 120,
+            startVelocity: 45,
+            colors: ['#ff477e', '#4ecdc4', '#45b7d1']
+          })
+        }, 1000 + (index * 300)) // Start after 1 second, 300ms between each
+      })
+      
+      // Hide confetti after all effects complete
+      setTimeout(() => {
+        setShowConfetti(false)
+      }, 3000)
       
       // Don't check if prize is complete here - that will be handled when "Next" is clicked
       
@@ -3934,16 +4320,37 @@ export function LuckyDraw() {
 
   return (
     <div className="[--header-height:calc(--spacing(14))]">
-      <div className={`flex flex-col ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={{ backgroundColor: settings?.backgroundColor || undefined }}>
-        {!isFullscreen && (
-        <SiteHeader
-          currentView={currentView}
-          onViewChange={setCurrentView}
-          entriesCount={entries.length}
-          prizesCount={prizes.length}
-        />
+      <div 
+        className={`flex flex-col ${isFullscreen ? 'h-screen' : 'min-h-screen'} relative`}
+        style={{
+          backgroundColor: settings?.backgroundColor || undefined
+        }}
+      >
+        {/* Background image with opacity */}
+        {settings?.backgroundType === "image" && settings?.backgroundImage && (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage: `url(${settings.backgroundImage})`,
+              backgroundSize: "contain",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              opacity: (settings.backgroundImageOpacity ?? 100) / 100,
+              zIndex: 0,
+            }}
+          />
         )}
-        <main className={`flex-1 ${isFullscreen ? 'overflow-hidden flex flex-col' : ''}`}>
+        {!isFullscreen && (
+        <div className="relative z-10">
+          <SiteHeader
+            currentView={currentView}
+            onViewChange={setCurrentView}
+            entriesCount={entries.length}
+            prizesCount={prizes.length}
+          />
+        </div>
+        )}
+        <main className={`flex-1 ${isFullscreen ? 'overflow-hidden flex flex-col' : ''} relative z-10`}>
           <div className={`w-full ${isFullscreen ? 'max-w-full px-2 sm:px-4 md:px-6 lg:px-8 flex-1 flex flex-col min-h-0' : 'max-w-7xl mx-auto p-4'} ${isFullscreen ? 'py-2' : 'space-y-4'}`}>
         {/* Main View */}
         {currentView === "main" && (
@@ -3986,20 +4393,36 @@ export function LuckyDraw() {
                       )
                     }
                     
-                    // Always show the prize at currentPrizeIndex (the prize currently being drawn)
-                    if (currentPrizeIndex >= filteredAssignments.length) {
-                      // If index is out of bounds, don't show anything (all prizes completed)
+                    // Use currentPrizeName directly to ensure it matches the drawing progress
+                    // If no current prize name, check if we should show waiting message
+                    if (!currentPrizeName || currentPrizeName.trim() === "") {
+                      // If drawing is in progress but no prize name, show waiting
+                      if (isDrawingInProgress && remainingWinners === 0) {
+                        return (
+                          <div 
+                            className={`${isFullscreen ? 'mb-1' : 'mb-3'} border-2 border-gray-300 rounded-xl text-center shadow-lg`}
+                            style={{
+                              backgroundColor: settings?.prizeTitleBackgroundColor || "#9ca3af",
+                              padding: `${settings?.prizeTitleBackgroundSize || 12}px`
+                            }}
+                          >
+                            <h3 
+                              className="font-black text-white drop-shadow-lg"
+                              style={{
+                                fontSize: `${settings?.prizeTitleFontSize || 48}px`
+                              }}
+                            >
+                              WAITING FOR NEXT PRIZE
+                            </h3>
+                          </div>
+                        )
+                      }
+                      // Otherwise don't show anything if no prize is set
                       return null
                     }
                     
-                    const currentAssignment = filteredAssignments[currentPrizeIndex]
-                    if (!currentAssignment) return null
-                    
-                    const prize = prizes.find(p => p.id === currentAssignment.prizeId)
-                    if (!prize) return null
-                    
                     // Check if remaining winners is 0
-                    if (remainingWinners === 0) {
+                    if (remainingWinners === 0 && isDrawingInProgress) {
                       return (
                         <div 
                           className={`${isFullscreen ? 'mb-1' : 'mb-3'} border-2 border-gray-300 rounded-xl text-center shadow-lg`}
@@ -4020,7 +4443,7 @@ export function LuckyDraw() {
                       )
                     }
                     
-                    // Show the current prize being drawn
+                    // Show the current prize being drawn (use currentPrizeName to match status message)
                     return (
                       <div 
                         className={`${isFullscreen ? 'mb-1' : 'mb-3'} border-2 border-gray-300 rounded-xl text-center shadow-lg`}
@@ -4035,7 +4458,7 @@ export function LuckyDraw() {
                             fontSize: `${settings?.prizeTitleFontSize || 48}px`
                           }}
                         >
-                          PRIZE : {prize.name.toUpperCase()}
+                          PRIZE : {currentPrizeName.toUpperCase()}
                         </h3>
                       </div>
                     )
@@ -4565,6 +4988,22 @@ export function LuckyDraw() {
                 Supported formats: CSV, TXT, Excel (.xlsx, .xls). Only the first column will be used as the name.
               </p>
             </div>
+
+            {/* Delete All Entries Button */}
+            {entries.length > 0 && (
+              <div className="mb-4 flex justify-end">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleDeleteAllEntries}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  <Trash2 className="size-4 mr-2" />
+                  Delete All Entries
+                </Button>
+              </div>
+            )}
 
             <EntriesTable 
               entries={entries} 
@@ -5213,6 +5652,29 @@ export function LuckyDraw() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Confirmation Dialog for Deleting All Entries */}
+      <AlertDialog open={showDeleteAllEntriesConfirmDialog} onOpenChange={setShowDeleteAllEntriesConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Delete All Entries</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete ALL {entries.length} entr{entries.length === 1 ? 'y' : 'ies'}? 
+              This will also delete all associated winners. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowDeleteAllEntriesConfirmDialog(false)
+            }}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteAllEntries} className="bg-red-600 hover:bg-red-700">
+              Delete All {entries.length} Entr{entries.length === 1 ? 'y' : 'ies'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Confirmation Dialog for Bulk Deleting Prizes */}
       <AlertDialog open={showBulkDeletePrizeConfirmDialog} onOpenChange={setShowBulkDeletePrizeConfirmDialog}>
         <AlertDialogContent>
@@ -5745,31 +6207,50 @@ export function LuckyDraw() {
                   // Reorder assignments based on tempPrizeOrder
                   const assignmentsToSave = tempPrizeAssignments.length > 0 ? tempPrizeAssignments : []
                   
-                  // Reorder assignments to match the prize order
+                  // Reorder assignments to match the prize order (preserve drag-and-drop order)
                   let orderedAssignments = tempPrizeOrder.length > 0 && tempPrizeOrder.length === prizes.length
                     ? tempPrizeOrder
                         .map(prizeId => assignmentsToSave.find(a => a.prizeId === prizeId))
                         .filter((a): a is { prizeId: string; count: number; bulkEnabled?: boolean; autoDraw?: boolean; autoDrawDelay?: number } => a !== undefined)
                     : assignmentsToSave
                   
-                  // Filter out prizes with 0 winners and sort by prize order (ascending)
-                  // Get prize indices for sorting
-                  const prizeIndexMap = new Map(prizes.map((p, index) => [p.id, index]))
-                  
-                  // Filter out assignments with count = 0, then sort by prize order (ascending)
+                  // Filter out assignments with count = 0, but preserve the order from tempPrizeOrder
                   orderedAssignments = orderedAssignments
                     .filter(a => a.count > 0 && a.prizeId && a.prizeId.trim() !== "")
-                    .sort((a, b) => {
-                      const indexA = prizeIndexMap.get(a.prizeId) ?? Infinity
-                      const indexB = prizeIndexMap.get(b.prizeId) ?? Infinity
-                      return indexA - indexB // Ascending order
-                    })
                   
                   setPrizeAssignments(orderedAssignments)
                   
                   // Save to database
                   try {
                     await saveDrawSettings(orderedAssignments)
+                    
+                    // If drawing is in progress, find the FIRST prize with remaining winners in the NEW order
+                    if (isDrawingInProgress) {
+                      // Find the first prize in the new order that has remaining winners
+                      for (let i = 0; i < orderedAssignments.length; i++) {
+                        const assignment = orderedAssignments[i]
+                        const prize = prizes.find(p => p.id === assignment.prizeId)
+                        if (!prize) continue
+                        
+                        // Calculate how many winners have been drawn for this prize
+                        const drawnWinnersForPrize = draws.reduce((count, draw) => {
+                          return count + draw.winners.filter(w => w.prizeId === prize.id).length
+                        }, 0)
+                        
+                        const remainingForPrize = assignment.count - drawnWinnersForPrize
+                        
+                        if (remainingForPrize > 0) {
+                          // Found the first prize with remaining winners in the new order
+                          // Update to this prize (even if it's different from current)
+                          setCurrentPrizeIndex(i)
+                          setCurrentPrizeWinnerCount(drawnWinnersForPrize)
+                          setCurrentPrizeName(prize.name)
+                          setRemainingWinners(remainingForPrize)
+                          break // Found the first prize, stop looking
+                        }
+                      }
+                    }
+                    
                     setShowDrawSettingsModal(false)
                     setTempPrizeAssignments([]) // Clear temp state
                     setTempPrizeOrder([])
@@ -5878,17 +6359,6 @@ export function LuckyDraw() {
       {/* Winner Modal with Confetti */}
       {showWinnerModal && winnerData && (
         <>
-          {/* React Confetti */}
-          {showConfetti && windowSize.width > 0 && windowSize.height > 0 && (
-            <Confetti
-              width={windowSize.width}
-              height={windowSize.height}
-              recycle={false}
-              numberOfPieces={500}
-              gravity={0.3}
-            />
-          )}
-          
           {/* Winner Modal */}
           <div className="fixed inset-0 z-[9998] flex items-center justify-center">
             {/* Overlay - No click handler to disable outside clicks */}
@@ -5896,8 +6366,21 @@ export function LuckyDraw() {
               className="fixed inset-0 bg-black/70 backdrop-blur-sm"
             />
             
+            {/* React Confetti - Above overlay but below modal */}
+            {showConfetti && windowSize.width > 0 && windowSize.height > 0 && (
+              <div className="fixed inset-0 z-[9999] pointer-events-none">
+                <Confetti
+                  width={windowSize.width}
+                  height={windowSize.height}
+                  recycle={false}
+                  numberOfPieces={500}
+                  gravity={0.3}
+                />
+              </div>
+            )}
+            
             {/* Modal Content */}
-            <div className={`relative z-[9999] bg-gray-800 rounded-2xl shadow-2xl w-full ${winnerData.winners.length > 1 ? 'max-w-2xl' : 'max-w-md'} mx-4 border border-gray-700`}>
+            <div className={`relative z-[10000] bg-gray-800 rounded-2xl shadow-2xl w-full ${winnerData.winners.length > 1 ? 'max-w-2xl' : 'max-w-md'} mx-4 border border-gray-700`}>
               
               {/* Header with Trophy */}
               <div className="text-center pt-10 pb-6 px-6">

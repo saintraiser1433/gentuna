@@ -22,6 +22,9 @@ export interface SettingsData {
   logoType: "text" | "image" | "icon"
   primaryColor: string
   backgroundColor: string
+  backgroundType?: "color" | "image" // New: choose between color or image
+  backgroundImage?: string // New: background image URL or data URL
+  backgroundImageOpacity?: number // New: opacity for background image (0-100)
   fontFamily: string
   systemName: string
   revealDelay?: number
@@ -49,6 +52,8 @@ export interface SettingsData {
   modalMusic?: string
   modalMusicVolume?: number
   shuffleNamesEnabled?: boolean // Enable/disable continuous name shuffling when not drawing
+  shuffleSpeed?: number // Speed of name shuffling in milliseconds (lower = faster, default: 200)
+  verticalRouletteIdleSpeed?: number // Speed of idle spin in vertical roulette (default: 100)
 }
 
 export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (settings: SettingsData) => void }) {
@@ -59,6 +64,9 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
     logoType: "icon",
     primaryColor: "#000000",
     backgroundColor: "#ffffff",
+    backgroundType: "color",
+    backgroundImage: "",
+    backgroundImageOpacity: 100,
     fontFamily: "Archivo",
     systemName: "Random Name Lucky Draw System",
     revealDelay: 3,
@@ -85,6 +93,8 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
     modalMusic: "",
     modalMusicVolume: 0.5,
     shuffleNamesEnabled: true, // Default to enabled
+    shuffleSpeed: 200, // Default shuffle speed: 200ms
+    verticalRouletteIdleSpeed: 100, // Default idle spin speed: 100
   })
 
   useEffect(() => {
@@ -133,6 +143,11 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
         if (parsed.modalMusic === undefined) parsed.modalMusic = ""
         if (parsed.modalMusicVolume === undefined) parsed.modalMusicVolume = 0.5
         if (parsed.shuffleNamesEnabled === undefined) parsed.shuffleNamesEnabled = true
+        if (parsed.shuffleSpeed === undefined) parsed.shuffleSpeed = 200
+        if (parsed.verticalRouletteIdleSpeed === undefined) parsed.verticalRouletteIdleSpeed = 100
+        if (parsed.backgroundType === undefined) parsed.backgroundType = "color"
+        if (parsed.backgroundImage === undefined) parsed.backgroundImage = ""
+        if (parsed.backgroundImageOpacity === undefined) parsed.backgroundImageOpacity = 100
         // Initialize settings - using requestAnimationFrame to defer state update
         requestAnimationFrame(() => {
           setSettings(parsed)
@@ -207,22 +222,115 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="backgroundColor">Background Color</Label>
-          <div className="flex gap-2">
-            <Input
-              id="backgroundColor"
-              type="color"
-              value={settings.backgroundColor}
-              onChange={(e) => setSettings({ ...settings, backgroundColor: e.target.value })}
-              className="w-20 h-10"
-            />
-            <Input
-              type="text"
-              value={settings.backgroundColor}
-              onChange={(e) => setSettings({ ...settings, backgroundColor: e.target.value })}
-              placeholder="#ffffff"
-            />
+          <Label htmlFor="backgroundType">Background</Label>
+          <div className="flex gap-2 mb-2">
+            <Button
+              type="button"
+              variant={settings.backgroundType === "color" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSettings({ ...settings, backgroundType: "color" })}
+              className="flex-1"
+            >
+              <Palette className="size-4 mr-2" />
+              Color
+            </Button>
+            <Button
+              type="button"
+              variant={settings.backgroundType === "image" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSettings({ ...settings, backgroundType: "image" })}
+              className="flex-1"
+            >
+              <ImageIcon className="size-4 mr-2" />
+              Image
+            </Button>
           </div>
+          
+          {settings.backgroundType === "color" ? (
+            <div className="flex gap-2">
+              <Input
+                id="backgroundColor"
+                type="color"
+                value={settings.backgroundColor}
+                onChange={(e) => setSettings({ ...settings, backgroundColor: e.target.value })}
+                className="w-20 h-10"
+              />
+              <Input
+                type="text"
+                value={settings.backgroundColor}
+                onChange={(e) => setSettings({ ...settings, backgroundColor: e.target.value })}
+                placeholder="#ffffff"
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  value={settings.backgroundImage || ""}
+                  onChange={(e) => setSettings({ ...settings, backgroundImage: e.target.value })}
+                  placeholder="Enter image URL or upload file..."
+                  className="flex-1"
+                />
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      const reader = new FileReader()
+                      reader.onload = (event) => {
+                        const dataUrl = event.target?.result as string
+                        setSettings({ ...settings, backgroundImage: dataUrl })
+                      }
+                      reader.readAsDataURL(file)
+                    }
+                  }}
+                  className="w-32"
+                />
+              </div>
+              {settings.backgroundImage && settings.backgroundImage.trim() && (
+                <div className="space-y-2">
+                  <Label htmlFor="backgroundImageOpacity">Background Image Opacity</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      id="backgroundImageOpacity"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={settings.backgroundImageOpacity ?? 100}
+                      onChange={(e) => setSettings({ ...settings, backgroundImageOpacity: Math.max(0, Math.min(100, parseInt(e.target.value) || 100)) })}
+                      className="w-24"
+                    />
+                    <span className="text-sm text-muted-foreground">% (0-100)</span>
+                    <div className="flex-1">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={settings.backgroundImageOpacity ?? 100}
+                        onChange={(e) => setSettings({ ...settings, backgroundImageOpacity: parseInt(e.target.value) })}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="relative h-32 border rounded-lg overflow-hidden">
+                    <img
+                      src={settings.backgroundImage}
+                      alt="Background preview"
+                      className="w-full h-full object-cover"
+                      style={{ opacity: (settings.backgroundImageOpacity ?? 100) / 100 }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -336,6 +444,88 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
             />
           </div>
           <p className="text-xs text-muted-foreground">Continuously shuffle entry names when not actively drawing (works for both vertical and wheel modes)</p>
+        </div>
+
+        {/* Shuffle Speed */}
+        {settings.shuffleNamesEnabled !== false && (
+          <div className="space-y-2">
+            <Label htmlFor="shuffleSpeed">Shuffle Speed</Label>
+            <div className="flex items-center gap-3">
+              <Input
+                id="shuffleSpeed"
+                type="number"
+                min="50"
+                max="2000"
+                step="50"
+                value={settings.shuffleSpeed || 200}
+                onChange={(e) => {
+                  const newSettings = { ...settings, shuffleSpeed: Math.max(50, Math.min(2000, parseInt(e.target.value) || 200)) }
+                  setSettings(newSettings)
+                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                  onSettingsChange(newSettings)
+                }}
+                className="w-24"
+              />
+              <span className="text-sm text-muted-foreground">ms (50-2000, lower = faster)</span>
+              <div className="flex-1">
+                <input
+                  type="range"
+                  min="50"
+                  max="2000"
+                  step="50"
+                  value={settings.shuffleSpeed || 200}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, shuffleSpeed: parseInt(e.target.value) }
+                    setSettings(newSettings)
+                    localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                    onSettingsChange(newSettings)
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">How fast names shuffle when not drawing (lower values = faster shuffling)</p>
+          </div>
+        )}
+
+        {/* Vertical Roulette Idle Spin Speed */}
+        <div className="space-y-2">
+          <Label htmlFor="verticalRouletteIdleSpeed">Vertical Roulette Idle Spin Speed</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              id="verticalRouletteIdleSpeed"
+              type="number"
+              min="10"
+              max="500"
+              step="10"
+              value={settings.verticalRouletteIdleSpeed || 100}
+              onChange={(e) => {
+                const newSettings = { ...settings, verticalRouletteIdleSpeed: Math.max(10, Math.min(500, parseInt(e.target.value) || 100)) }
+                setSettings(newSettings)
+                localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                onSettingsChange(newSettings)
+              }}
+              className="w-24"
+            />
+            <span className="text-sm text-muted-foreground">(10-500, higher = faster)</span>
+            <div className="flex-1">
+              <input
+                type="range"
+                min="10"
+                max="500"
+                step="10"
+                value={settings.verticalRouletteIdleSpeed || 100}
+                onChange={(e) => {
+                  const newSettings = { ...settings, verticalRouletteIdleSpeed: parseInt(e.target.value) }
+                  setSettings(newSettings)
+                  localStorage.setItem("drawSettings", JSON.stringify(newSettings))
+                  onSettingsChange(newSettings)
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">Speed of the vertical roulette when idle (not actively drawing)</p>
         </div>
       </div>
 
@@ -1342,7 +1532,7 @@ export function SettingsPanel({ onSettingsChange }: { onSettingsChange: (setting
               className="w-32"
             />
           </div>
-          <p className="text-xs text-muted-foreground">Music played when winner modal appears (loops continuously)</p>
+          <p className="text-xs text-muted-foreground">Music played when winner modal appears</p>
           
           {/* Modal Music Volume */}
           <div className="space-y-2">

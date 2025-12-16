@@ -269,7 +269,7 @@ export function useSound() {
 
       const audio = new Audio(settings.modalMusic)
       audio.volume = settings.modalMusicVolume ?? 0.5
-      audio.loop = true
+      audio.loop = false
       audio.play().catch((error) => {
         console.error("Error playing modal music:", error)
       })
@@ -299,5 +299,6 @@ export function useSound() {
     checkEntryPassed,
     playModalMusic,
     stopModalMusic,
+    playDefaultTickSound,
   }
 }

@@ -82,3 +82,25 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// DELETE /api/entries - Delete all entries
+export async function DELETE(request: NextRequest) {
+  try {
+    // Delete all winners first (to avoid foreign key issues)
+    await prisma.winner.deleteMany({})
+    
+    // Delete all entries
+    const result = await prisma.entry.deleteMany({})
+
+    return NextResponse.json({ 
+      success: true,
+      deletedCount: result.count 
+    })
+  } catch (error) {
+    console.error('Error deleting all entries:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete all entries' },
+      { status: 500 }
+    )
+  }
+}
+
